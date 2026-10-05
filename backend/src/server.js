@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
+const { sequelize, Role } = require("./models");
 
 const app = express();
 app.use(cors());
@@ -11,12 +12,12 @@ app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-// Stockage temporaire en mémoire (remplacé plus tard par la base d'INFRA)
+// Stockage temporaire en mémoire (remplacé plus tard par la table events)
 const alerts = [];
 
 // Route de test
 app.get("/api/v1/health", (req, res) => {
-    res.json({ status: "ok", ts: Date.now() });
+    res.json({ status: "ok", db: dbReady ? "up" : "down", ts: Date.now() });
 });
 
 // Route obligatoire du sujet
@@ -39,7 +40,28 @@ io.on("connection", (socket) => {
     console.log("Dashboard connecté :", socket.id);
 });
 
+// Initialisation de la base
+let dbReady = false;
+
+async function initDatabase() {
+    try {
+        await sequelize.authenticate();
+        await sequelize.sync();   // crée les tables roles et users si besoin
+        for (const name of ["admin", "superviseur", "lecteur"]) {
+            await Role.findOrCreate({ where: { name } });
+        }
+        dbReady = true;
+        console.log("Base de données connectée");
+    } catch (err) {
+        console.warn("Base de données indisponible :", err.message);
+        console.warn("L'API démarre quand même (alertes en mémoire uniquement)");
+    }
+}
+
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, "0.0.0.0", () => {
-    console.log(`API Sentinel-X sur le port ${PORT}`);
+
+initDatabase().then(() => {
+    server.listen(PORT, "0.0.0.0", () => {
+        console.log(`API Sentinel-X sur le port ${PORT}`);
+    });
 });
