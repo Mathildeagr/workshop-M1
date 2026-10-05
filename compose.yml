@@ -1,0 +1,126 @@
+name: sentinel-x
+
+services:
+
+  # Entré réseau / routage / TLS
+  traefik:
+    image: traefik:v3.3
+    container_name: sentinel-traefik
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=sentinel-edge
+      - --entrypoints.web.address=:80
+      # - --entrypoints.websecure.address=:443
+      - --entrypoints.mqtt.address=:1883
+      # - --api.dashboard=true
+    ports:
+      - "80:80"
+      # - "443:443"
+      - "1883:1883"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      # - traefik-certs:/letsencrypt
+    networks:
+      - edge
+
+  # Bus de messages capteurs
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: sentinel-mosquitto
+    restart: unless-stopped
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-logs:/mosquitto/log
+    networks:
+      - edge  # nécessaire pour exposition MQTT aux ESP32
+      - internal
+    labels:
+      - traefik.enable=true
+      - traefik.tcp.routers.mqtt.rule=HostSNI(`*`)
+      - traefik.tcp.routers.mqtt.entrypoints=mqtt
+      - traefik.tcp.services.mqtt.loadbalancer.server.port=1883
+
+  database: #TODO sécurisé l'accès (lecture/ecriture) via mot de passe en .env
+    image: postgres:16-alpine
+    container_name: sentinel-database
+    restart: unless-stopped
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - internal
+
+  backend:
+    build:
+      context: ./backend
+    container_name: sentinel-backend
+    restart: unless-stopped
+    depends_on:
+      - database
+      - mosquitto
+    networks:
+      - edge
+      - internal
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.backend.rule=Host(`sentinel.localhost`) && PathPrefix(`/api`)
+      - traefik.http.routers.backend.entrypoints=web
+      - traefik.http.services.backend.loadbalancer.server.port=3000
+
+  frontend:
+    build:
+      context: ./dashboard
+    container_name: sentinel-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - edge
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.frontend.rule=Host(`sentinel.localhost`)
+      - traefik.http.routers.frontend.entrypoints=web
+      - traefik.http.services.frontend.loadbalancer.server.port=80
+
+  # flux caméra : émission événements + actions caméra/algo
+  ia-vision:
+    build:
+      context: ./ia-vision
+    container_name: sentinel-ia-vision
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    networks:
+      - internal
+    devices: ["/dev/video0:/dev/video0"]  # pour la caméra locale sur macOs
+    #TODO: réfléchir si on veut un volume pour stocker les images ?
+
+  # données capteurs -> événements
+  predict-anomalie:
+    build:
+      context: ./predict-anomalie
+    container_name: sentinel-predict-anomalie
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+      - database
+    networks:
+      - internal
+    #TODO: on veut un volume pour stocker le modèle entrainé ?
+
+networks:
+  edge: # Attention exposé via traefik du coup
+    name: sentinel-edge
+  internal: # Normalement non accessible depuis l'extérieur
+    name: sentinel-internal
+    internal: true
+
+volumes:
+  db-data:
+  mosquitto-data:
+  mosquitto-logs:
+  # traefik-certs:
