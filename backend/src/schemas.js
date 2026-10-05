@@ -21,4 +21,14 @@ const alertSchema = z.object({
     value: z.union([z.number().finite(), z.boolean(), z.string().max(100)]).optional(),
 }).strict();
 
-module.exports = { loginSchema, createUserSchema, alertSchema };
+// Query string : toujours des chaînes, d'où les conversions
+const alertQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    acknowledged: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
+});
+
+const idParamSchema = z.object({
+    id: z.coerce.number().int().positive(),
+});
+
+module.exports = { loginSchema, createUserSchema, alertSchema, alertQuerySchema, idParamSchema };

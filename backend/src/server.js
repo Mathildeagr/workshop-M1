@@ -3,7 +3,7 @@ const express = require("express");
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { Server } = require("socket.io");
-const { sequelize, Role, User } = require("./models");
+const { sequelize, Role, User, Device } = require("./models");
 const { applySecurity, errorHandler, corsOptions } = require("./middleware/security");
 const { verifyToken } = require("./middleware/auth");
 const authRouter = require("./routes/auth");
@@ -35,13 +35,13 @@ app.get("/api/v1/health", (req, res) => {
     res.json({ status: "ok", db: dbReady ? "up" : "down", ts: Date.now() });
 });
 
-// Les comptes sont en base : réponse claire plutôt qu'une erreur 500 si elle est tombée
+// Comptes et alertes sont en base : réponse claire plutôt qu'une erreur 500 si elle est tombée
 const requireDb = (req, res, next) =>
     dbReady ? next() : res.status(503).json({ error: "Base de données indisponible" });
 
 app.use("/api/v1/auth", requireDb, authRouter);
 app.use("/api/v1/users", requireDb, usersRouter);
-app.use("/api/v1/alerts", alertsRouter(io));
+app.use("/api/v1/alerts", requireDb, alertsRouter(io));
 
 app.use((req, res) => res.status(404).json({ error: "Route inconnue" }));
 app.use(errorHandler);
@@ -60,20 +60,34 @@ async function seedAdmin() {
     console.log(`Compte admin "${username}" créé`);
 }
 
+// Un Device par entrée de DEVICE_API_KEYS : nécessaire pour les clés étrangères des alertes et mesures
+function deviceType(id) {
+    if (id.startsWith("esp")) return "esp8266";
+    if (id === "vision" || id === "predictive") return id;
+    return "other";
+}
+
+async function seedDevices() {
+    for (const id of config.deviceKeys.values()) {
+        await Device.findOrCreate({ where: { id }, defaults: { name: id, type: deviceType(id) } });
+    }
+}
+
 // Initialisation de la base
 async function initDatabase() {
     try {
         await sequelize.authenticate();
-        await sequelize.sync();   // crée les tables roles et users si besoin
+        await sequelize.sync();   // crée les tables manquantes (ne modifie jamais une table existante)
         for (const name of ["admin", "superviseur", "lecteur"]) {
             await Role.findOrCreate({ where: { name } });
         }
         await seedAdmin();
+        await seedDevices();
         dbReady = true;
         console.log("Base de données connectée");
     } catch (err) {
         console.warn("Base de données indisponible :", err.message || err.original?.code || err.name);
-        console.warn("L'API démarre quand même (alertes en mémoire uniquement)");
+        console.warn("L'API démarre quand même (les routes qui utilisent la base répondent 503)");
     }
 }
 
