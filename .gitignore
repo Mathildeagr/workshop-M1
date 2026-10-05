@@ -1,0 +1,70 @@
+# ─── Dependencies ───────────────────────────────
+node_modules/
+**/node_modules/
+
+# ─── Angular / Node (dashboard) ─────────────────
+dist/
+.angular/
+out-tsc/
+*.tsbuildinfo
+.vite/
+coverage/
+
+# ─── Python (ia) ────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+*.pth
+
+# ─── Firmware (C/C++, PlatformIO, Arduino, ESP) ─
+.pio/
+.pioenvs/
+.piolibdeps/
+build/
+*.bin
+*.elf
+*.hex
+*.map
+*.o
+*.a
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+.vscode/extensions.json
+
+# ─── Infra (Docker, Terraform) ──────────────────
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform.lock.hcl
+docker-compose.override.yml
+
+# ─── Secrets & config ───────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ─── IDE ────────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+*.swp
+*.swo
+
+# ─── OS ─────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Logs & temp ────────────────────────────────
+*.log
+logs/
+tmp/
+*.tmp
