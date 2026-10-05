@@ -1,0 +1,41 @@
+<header>
+  <h1>Sentinel-X</h1>
+  <div class="header-actions">
+    <span class="badge" [class.ok]="apiUp()">API {{ apiUp() ? 'connectée' : 'injoignable' }}</span>
+    <button class="secondary" (click)="logout()">Déconnexion</button>
+  </div>
+</header>
+
+<main>
+  <section class="card status">
+    <h2>Statut du boîtier</h2>
+    <p>
+      <span class="dot" [class.ok]="online()"></span>
+      {{ online() ? 'En ligne' : 'Hors ligne' }}
+    </p>
+    <p>Présence (PIR) : <strong>{{ last()?.motion ? 'Détectée' : 'Aucune' }}</strong></p>
+    <p>Dernière mesure : {{ last() ? (last()!.ts | date: 'HH:mm:ss') : '–' }}</p>
+
+    <h2>Dernières alertes</h2>
+    @for (a of recentAlerts(); track a.id) {
+      <p class="alert">{{ a.ts | date: 'HH:mm:ss' }} · {{ a.type }} ({{ a.source }})</p>
+    } @empty {
+      <p class="muted">Aucune alerte</p>
+    }
+  </section>
+
+  <section class="card webcam">
+    <h2>Webcam</h2>
+    @if (!webcamError()) {
+      <img [src]="webcamUrl" alt="Flux webcam" (error)="webcamError.set(true)" />
+    } @else {
+      <p class="muted">Flux vidéo indisponible</p>
+    }
+  </section>
+
+  <section class="card"><app-face-scan /></section>
+
+  <section class="card"><app-line-chart label="Température" unit="°C" color="#ff6b4a" [values]="temperature()" /></section>
+  <section class="card"><app-line-chart label="Humidité" unit="%" color="#4f8cff" [values]="humidity()" /></section>
+  <section class="card"><app-line-chart label="Gaz (MQ-2)" color="#f5b301" [values]="gas()" /></section>
+</main>

@@ -1,0 +1,40 @@
+<h2>Scan du visage</h2>
+
+<div class="viewer">
+  <video #video autoplay muted playsinline [hidden]="!cameraOn()"></video>
+  @if (cameraOn()) {
+    <div class="guide"></div>
+  }
+  @if (photo(); as p) {
+    <img [src]="p" alt="Visage capturé" />
+  }
+  @if (!cameraOn() && !photo()) {
+    <p class="placeholder">Caméra éteinte</p>
+  }
+</div>
+
+<div class="actions">
+  @if (cameraOn()) {
+    <button (click)="capture()">Capturer</button>
+  } @else if (photo()) {
+    <button (click)="send()" [disabled]="status() === 'sending' || status() === 'sent'">Envoyer</button>
+    <button class="secondary" (click)="start()">Reprendre</button>
+  } @else {
+    <button (click)="start()">Activer la caméra</button>
+  }
+</div>
+
+@switch (status()) {
+  @case ('sending') {
+    <p class="msg">Envoi en cours…</p>
+  }
+  @case ('sent') {
+    <p class="msg ok">Visage envoyé</p>
+  }
+  @case ('send-error') {
+    <p class="msg error">Échec de l'envoi</p>
+  }
+  @case ('camera-error') {
+    <p class="msg error">Caméra inaccessible (autorisation refusée ou HTTPS requis)</p>
+  }
+}
