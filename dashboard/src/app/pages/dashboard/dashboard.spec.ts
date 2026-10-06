@@ -17,7 +17,9 @@ describe('Dashboard', () => {
       { ts: now - 4000, temperature: 21, humidity: 40, gas: 100, motion: false },
       { ts: now - 2000, temperature: 22, humidity: 41, gas: 110, motion: true },
     ];
-    alerts = [{ id: 1, source: 'esp8266', type: 'gas', ts: now }];
+    alerts = [
+      { id: 1, source: 'esp01', type: 'gas', level: 'critical', acknowledged: false, createdAt: new Date(now).toISOString() },
+    ];
   });
 
   afterEach(() => vi.useRealTimers());

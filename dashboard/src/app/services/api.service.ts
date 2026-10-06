@@ -11,13 +11,15 @@ export interface Metric {
   motion: boolean;
 }
 
+/** Format renvoyé par GET /api/v1/alerts (les plus récentes en premier). */
 export interface Alert {
   id: number;
   source: string;
   type: string;
-  level?: string;
+  level: 'info' | 'warning' | 'critical';
   value?: unknown;
-  ts: number;
+  acknowledged: boolean;
+  createdAt: string;
 }
 
 /** Centralise tous les appels HTTP vers l'API. En cas d'erreur, renvoie une valeur vide. */
