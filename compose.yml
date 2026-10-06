@@ -16,7 +16,7 @@ services:
       - --entrypoints.mqtt.address=:1883
       # - --api.dashboard=true
     ports:
-      - "80:80"
+      - "${HTTP_PORT:-80}:80"   # HTTP_PORT dans le .env si le port 80 est déjà pris sur la machine
       # - "443:443"
       - "1883:1883"
     volumes:
@@ -36,7 +36,7 @@ services:
       - mosquitto-data:/mosquitto/data
       - mosquitto-logs:/mosquitto/log
     networks:
-      - edge  # nécessaire pour exposition MQTT aux ESP32
+      - edge  # nécessaire pour exposition MQTT à l'ESP8266
       - internal
     labels:
       - traefik.enable=true
@@ -44,13 +44,23 @@ services:
       - traefik.tcp.routers.mqtt.entrypoints=mqtt
       - traefik.tcp.services.mqtt.loadbalancer.server.port=1883
 
-  database: #TODO sécurisé l'accès (lecture/ecriture) via mot de passe en .env
+  # Identifiants lus dans le .env à la racine (voir .env.example)
+  database:
     image: postgres:16-alpine
     container_name: sentinel-database
     restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sentinel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans le .env racine}
+      POSTGRES_DB: ${POSTGRES_DB:-sentinelx}
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - internal
 
@@ -59,15 +69,25 @@ services:
       context: ./backend
     container_name: sentinel-backend
     restart: unless-stopped
+    # Secrets de l'API (JWT_SECRET, DEVICE_API_KEYS, ADMIN_*) : backend/.env
+    env_file: ./backend/.env
+    # Valeurs propres à Docker : elles remplacent celles du backend/.env (prévues pour le dev local)
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-sentinel}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-sentinelx}
+      CORS_ORIGINS: http://sentinel.localhost,http://localhost
+      TRUST_PROXY: "1"   # derrière Traefik : vraie IP client pour le rate limiting
     depends_on:
-      - database
-      - mosquitto
+      database:
+        condition: service_healthy   # attend que Postgres accepte les connexions
+      mosquitto:
+        condition: service_started
     networks:
       - edge
       - internal
     labels:
       - traefik.enable=true
-      - traefik.http.routers.backend.rule=Host(`sentinel.localhost`) && PathPrefix(`/api`)
+      # Sans Host() : l'API répond aussi via l'IP du serveur (ESP8266, autres PC de la table)
+      - traefik.http.routers.backend.rule=PathPrefix(`/api`) || PathPrefix(`/socket.io`)
       - traefik.http.routers.backend.entrypoints=web
       - traefik.http.services.backend.loadbalancer.server.port=3000
 
@@ -82,35 +102,41 @@ services:
       - edge
     labels:
       - traefik.enable=true
-      - traefik.http.routers.frontend.rule=Host(`sentinel.localhost`)
+      # Tout ce qui n'est pas /api ou /socket.io (Traefik donne la priorité à la règle la plus longue)
+      - traefik.http.routers.frontend.rule=PathPrefix(`/`)
       - traefik.http.routers.frontend.entrypoints=web
       - traefik.http.services.frontend.loadbalancer.server.port=80
 
-  # flux caméra : émission événements + actions caméra/algo
-  ia-vision:
-    build:
-      context: ./ia-vision
-    container_name: sentinel-ia-vision
-    restart: unless-stopped
-    depends_on:
-      - mosquitto
-    networks:
-      - internal
-    devices: ["/dev/video0:/dev/video0"]  # pour la caméra locale sur macOs
-    #TODO: réfléchir si on veut un volume pour stocker les images ?
-
-  # données capteurs -> événements
-  predict-anomalie:
-    build:
-      context: ./predict-anomalie
-    container_name: sentinel-predict-anomalie
-    restart: unless-stopped
-    depends_on:
-      - mosquitto
-      - database
-    networks:
-      - internal
-    #TODO: on veut un volume pour stocker le modèle entrainé ?
+  # Services IA désactivés tant que leurs dossiers (Dockerfile + code) n'existent pas : sinon "docker compose up" échoue.
+  #
+  # ia-vision : à lancer plutôt directement sur la machine hôte. Docker Desktop (macOS/Windows)
+  # ne transmet pas la webcam USB aux conteneurs, /dev/video0 ne fonctionne que sur un hôte Linux.
+  #
+  # # flux caméra : émission événements + actions caméra/algo
+  # ia-vision:
+  #   build:
+  #     context: ./ia-vision
+  #   container_name: sentinel-ia-vision
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - mosquitto
+  #   networks:
+  #     - internal
+  #   devices: ["/dev/video0:/dev/video0"]  # hôte Linux uniquement (ex : Raspberry Pi)
+  #   #TODO: réfléchir si on veut un volume pour stocker les images ?
+  #
+  # # données capteurs -> événements
+  # predict-anomalie:
+  #   build:
+  #     context: ./predict-anomalie
+  #   container_name: sentinel-predict-anomalie
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - mosquitto
+  #     - database
+  #   networks:
+  #     - internal
+  #   #TODO: on veut un volume pour stocker le modèle entrainé ?
 
 networks:
   edge: # Attention exposé via traefik du coup

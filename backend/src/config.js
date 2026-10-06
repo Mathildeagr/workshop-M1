@@ -40,6 +40,8 @@ module.exports = {
     jwtSecret,
     jwtExpiresIn: process.env.JWT_EXPIRES_IN || "8h",
     corsOrigins: list(process.env.CORS_ORIGINS || "http://localhost:4200"),
+    // Nombre de proxys devant l'API (1 = Traefik). 0 en local : sinon X-Forwarded-For serait falsifiable
+    trustProxy: Number(process.env.TRUST_PROXY) || 0,
     deviceKeys: parseDeviceKeys(process.env.DEVICE_API_KEYS),
     admin: {
         username: process.env.ADMIN_USERNAME,
