@@ -107,23 +107,30 @@ services:
       - traefik.http.routers.frontend.entrypoints=web
       - traefik.http.services.frontend.loadbalancer.server.port=80
 
-  # Services IA désactivés tant que leurs dossiers (Dockerfile + code) n'existent pas : sinon "docker compose up" échoue.
-  #
-  # ia-vision : à lancer plutôt directement sur la machine hôte. Docker Desktop (macOS/Windows)
-  # ne transmet pas la webcam USB aux conteneurs, /dev/video0 ne fonctionne que sur un hôte Linux.
-  #
-  # # flux caméra : émission événements + actions caméra/algo
-  # ia-vision:
-  #   build:
-  #     context: ./ia-vision
-  #   container_name: sentinel-ia-vision
-  #   restart: unless-stopped
-  #   depends_on:
-  #     - mosquitto
-  #   networks:
-  #     - internal
-  #   devices: ["/dev/video0:/dev/video0"]  # hôte Linux uniquement (ex : Raspberry Pi)
-  #   #TODO: réfléchir si on veut un volume pour stocker les images ?
+  # flux caméra : détection personnes/visages + alertes vers le backend
+  # Docker Desktop (macOS/Windows) ne transmet pas la webcam USB aux conteneurs, /dev/video0 ne fonctionne
+  # que sur un hôte Linux. Ailleurs, lancer ai-vision/server.py directement sur la machine hôte.
+  # Profil "vision" : démarré seulement avec "docker compose --profile vision up"
+  ai-vision:
+    build:
+      context: ./ai-vision
+    container_name: sentinel-ai-vision
+    restart: unless-stopped
+    profiles: ["vision"]
+    environment:
+      SENTINEL_SERVICE_TOKEN: ${VISION_SERVICE_TOKEN:-}   # même valeur que VISION_SERVICE_TOKEN du backend
+      SENTINEL_API_URL: http://backend:3000/api/v1/alerts
+      SENTINEL_API_TOKEN: ${VISION_API_KEY:-}            # clé "vision" de DEVICE_API_KEYS (backend/.env)
+      SENTINEL_API_ENABLED: "1"
+    volumes:
+      - vision-data:/app/data   # visages enregistrés + snapshots des alertes
+    devices: ["/dev/video0:/dev/video0"]  # hôte Linux uniquement (ex : Raspberry Pi)
+    depends_on:
+      - backend
+    networks:
+      - internal
+
+  # Service IA désactivé tant que son dossier (Dockerfile + code) n'existe pas : sinon "docker compose up" échoue.
   #
   # # données capteurs -> événements
   # predict-anomalie:
@@ -149,4 +156,5 @@ volumes:
   db-data:
   mosquitto-data:
   mosquitto-logs:
+  vision-data:
   # traefik-certs:

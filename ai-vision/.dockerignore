@@ -1,0 +1,12 @@
+# Secrets et données personnelles : jamais dans l'image
+.env
+data/
+cam_test/
+resultat.jpg
+
+# Environnement local et modèles (retéléchargés au build)
+.venv/
+__pycache__/
+models/
+*.pt
+node_modules/
