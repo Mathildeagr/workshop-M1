@@ -1,0 +1,14 @@
+# Modèles (lourds, retéléchargeables)
+models/
+# Empreintes faciales et captures : données personnelles, jamais dans Git
+data/
+.venv/
+__pycache__/
+.env
+resultat.jpg
+
+# Poids YOLO (téléchargés automatiquement)
+*.pt
+
+# Node
+node_modules/
