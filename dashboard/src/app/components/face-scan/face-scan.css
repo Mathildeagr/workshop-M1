@@ -1,0 +1,41 @@
+.viewer {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+
+video,
+img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Ovale de cadrage pour aider l'utilisateur à centrer son visage */
+.guide {
+  position: absolute;
+  inset: 12% 30%;
+  border: 2px dashed rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+}
+
+.placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.msg { margin: 8px 0 0; font-size: 14px; color: var(--muted); }
+.msg.ok { color: var(--ok); }
+.msg.error { color: var(--danger-text); }

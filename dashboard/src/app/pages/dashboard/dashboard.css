@@ -1,0 +1,41 @@
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+h1 { margin: 0; font-size: 22px; }
+
+.header-actions { display: flex; align-items: center; gap: 12px; }
+
+main {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  padding: 24px;
+}
+
+.webcam img { width: 100%; border-radius: 8px; background: #000; }
+
+.badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  background: var(--danger);
+}
+.badge.ok { background: var(--ok); }
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: var(--danger);
+}
+.dot.ok { background: var(--ok); }
+
+.alert { color: var(--danger-text); margin: 4px 0; font-size: 14px; }
+.muted { color: var(--muted); }
