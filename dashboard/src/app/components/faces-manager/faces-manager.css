@@ -1,0 +1,29 @@
+table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px; }
+td { padding: 10px 4px; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: none; }
+
+form { display: grid; gap: 8px; margin-bottom: 16px; }
+label { display: grid; gap: 6px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+input,
+select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-size: 12px;
+  letter-spacing: normal;
+  text-transform: none;
+  background: var(--input-bg);
+  color: var(--input-text);
+  font: inherit;
+}
+
+button.small { padding: 4px 10px; font-size: 10px; }
+
+.muted { color: var(--muted); }
+.tag.autorise { color: var(--ok); }
+.tag.interdit { color: var(--danger-text); }
+
+.msg { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.msg.ok { color: var(--ok); }
+.msg.error { color: var(--danger-text); }

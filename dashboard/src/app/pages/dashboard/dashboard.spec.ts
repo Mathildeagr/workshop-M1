@@ -17,18 +17,25 @@ describe('Dashboard', () => {
       { ts: now - 4000, temperature: 21, humidity: 40, gas: 100, motion: false },
       { ts: now - 2000, temperature: 22, humidity: 41, gas: 110, motion: true },
     ];
-    alerts = [{ id: 1, source: 'esp8266', type: 'gas', ts: now }];
+    alerts = [
+      { id: 1, source: 'esp01', type: 'gas', level: 'critical', acknowledged: false, createdAt: new Date(now).toISOString() },
+    ];
   });
 
   afterEach(() => vi.useRealTimers());
 
-  function setup(api: Partial<ApiService>) {
+  function setup(api: Partial<ApiService>, role = 'lecteur') {
+    const vision: Partial<ApiService> = {
+      getVisionStatus: () => of(null),
+      getStreamUrl: () => of(null),
+      getFaces: () => of([]),
+    };
     TestBed.configureTestingModule({
       imports: [Dashboard],
       providers: [
         provideRouter([]),
-        { provide: ApiService, useValue: api },
-        { provide: AuthService, useValue: { logout: vi.fn() } },
+        { provide: ApiService, useValue: { ...vision, ...api } },
+        { provide: AuthService, useValue: { logout: vi.fn(), user: () => ({ id: 1, username: 'u', role }) } },
       ],
     });
     const fixture = TestBed.createComponent(Dashboard);
@@ -69,12 +76,16 @@ describe('Dashboard', () => {
     expect(el.querySelector('.status')?.textContent).toContain('Aucune alerte');
   });
 
-  it('remplace la webcam par un message en cas d\'erreur', () => {
+  it('affiche la caméra Sentinel et cache les visages au rôle lecteur', () => {
     const { el } = setup({ isApiUp: () => of(true), getMetrics: () => of([]), getAlerts: () => of([]) });
-    el.querySelector('.webcam img')?.dispatchEvent(new Event('error'));
-    TestBed.tick();
-    expect(el.querySelector('.webcam img')).toBeNull();
-    expect(el.querySelector('.webcam')?.textContent).toContain('indisponible');
+    expect(el.querySelector('app-vision-feed')?.textContent).toContain('Service vision injoignable');
+    expect(el.querySelector('app-faces-manager')).toBeNull();
+  });
+
+  it('affiche la gestion des visages aux superviseurs', () => {
+    const empty = { isApiUp: () => of(true), getMetrics: () => of([]), getAlerts: () => of([]) };
+    const { el } = setup(empty, 'superviseur');
+    expect(el.querySelector('app-faces-manager')).not.toBeNull();
   });
 
   it('déconnecte et renvoie vers /login', () => {

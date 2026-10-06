@@ -3,8 +3,8 @@
   <p class="subtitle">Centre de commandement</p>
 
   <label>
-    Email
-    <input type="email" formControlName="email" autocomplete="email" />
+    Nom d'utilisateur
+    <input type="text" formControlName="username" autocomplete="username" />
   </label>
 
   <label>
@@ -13,8 +13,10 @@
   </label>
 
   @if (error()) {
-    <p class="error">Email ou mot de passe incorrect</p>
+    <p class="error">{{ error() }}</p>
   }
 
-  <button type="submit" [disabled]="form.invalid">Se connecter</button>
+  <button type="submit" [disabled]="form.invalid || loading()">
+    {{ loading() ? 'Connexion…' : 'Se connecter' }}
+  </button>
 </form>

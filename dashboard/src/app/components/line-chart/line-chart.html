@@ -1,7 +1,8 @@
 <h3>
-  {{ label() }}
-  <span>{{ values().at(-1) ?? '–' }} {{ unit() }}</span>
+  <span class="name"><span class="swatch" [style.border-color]="color()"></span>{{ label() }}</span>
+  <span class="value">{{ values().at(-1) ?? '–' }} <small>{{ unit() }}</small></span>
 </h3>
 <svg viewBox="0 0 100 40" preserveAspectRatio="none">
+  <polygon [attr.points]="area()" [attr.fill]="color()" />
   <polyline [attr.points]="points()" [attr.stroke]="color()" />
 </svg>

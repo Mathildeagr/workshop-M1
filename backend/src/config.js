@@ -40,9 +40,16 @@ module.exports = {
     jwtSecret,
     jwtExpiresIn: process.env.JWT_EXPIRES_IN || "8h",
     corsOrigins: list(process.env.CORS_ORIGINS || "http://localhost:4200"),
+    // Nombre de proxys devant l'API (1 = Traefik). 0 en local : sinon X-Forwarded-For serait falsifiable
+    trustProxy: Number(process.env.TRUST_PROXY) || 0,
     deviceKeys: parseDeviceKeys(process.env.DEVICE_API_KEYS),
     admin: {
         username: process.env.ADMIN_USERNAME,
         password: process.env.ADMIN_PASSWORD,
+    },
+    // Service Python ai-vision/server.py (sur la machine hôte). Optionnel : sans lui, /vision et /faces répondent 503
+    vision: {
+        url: (process.env.VISION_SERVICE_URL || "http://127.0.0.1:5000").replace(/\/$/, ""),
+        token: process.env.VISION_SERVICE_TOKEN || "",
     },
 };

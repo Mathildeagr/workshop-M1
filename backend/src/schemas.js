@@ -14,11 +14,27 @@ const createUserSchema = z.object({
     role: z.enum(["admin", "superviseur", "lecteur"]),
 }).strict();
 
+const primitive = z.union([z.number().finite(), z.boolean(), z.string().max(100), z.null()]);
+
 // La source n'est pas dans le body : elle vient de la clé d'appareil (anti-usurpation)
 const alertSchema = z.object({
     type: identifier,
     level: z.enum(["info", "warning", "critical"]).default("info"),
-    value: z.union([z.number().finite(), z.boolean(), z.string().max(100)]).optional(),
+    // Valeur simple (812) ou petit objet plat (IA vision : { label, status, confidence... })
+    value: z.union([
+        primitive,
+        z.record(identifier, primitive).refine((o) => Object.keys(o).length <= 10, "10 champs maximum"),
+    ]).optional(),
+}).strict();
+
+// Visages (service vision) : mêmes règles de nom que côté Python
+const faceNameSchema = z.object({ name: identifier });
+const faceStatusSchema = z.object({ status: z.enum(["autorise", "interdit"]) }).strict();
+// Enrôlement par la webcam (équivalent de "enroll.py add")
+const faceCaptureSchema = z.object({
+    name: identifier,
+    status: z.enum(["autorise", "interdit"]).default("autorise"),
+    samples: z.number().int().min(1).max(30).default(10),
 }).strict();
 
 // Query string : toujours des chaînes, d'où les conversions
@@ -31,4 +47,7 @@ const idParamSchema = z.object({
     id: z.coerce.number().int().positive(),
 });
 
-module.exports = { loginSchema, createUserSchema, alertSchema, alertQuerySchema, idParamSchema };
+module.exports = {
+    loginSchema, createUserSchema, alertSchema, alertQuerySchema, idParamSchema, faceNameSchema, faceStatusSchema,
+    faceCaptureSchema,
+};

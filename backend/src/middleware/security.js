@@ -27,6 +27,7 @@ const loginLimiter = rateLimit({
 
 function applySecurity(app) {
     app.disable("x-powered-by");
+    app.set("trust proxy", config.trustProxy);   // derrière Traefik, req.ip = vraie IP du client et non celle du proxy
     app.use(helmet());
     app.use(cors(corsOptions));
     app.use(globalLimiter);

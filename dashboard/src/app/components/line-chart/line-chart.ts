@@ -19,4 +19,7 @@ export class LineChart {
     const range = Math.max(...v) - min || 1;
     return v.map((y, i) => `${(i / (v.length - 1)) * 100},${38 - ((y - min) / range) * 36}`).join(' ');
   });
+
+  /** Même tracé, fermé sur l'axe du bas pour remplir l'aire. */
+  area = computed(() => (this.points() ? `0,40 ${this.points()} 100,40` : ''));
 }

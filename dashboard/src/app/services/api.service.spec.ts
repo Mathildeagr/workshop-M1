@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { API_URL } from '../config';
-import { ApiService, type Alert, type Metric } from './api.service';
+import { ApiService, type Alert, type Metric, type VisionStatus } from './api.service';
 
 describe('ApiService', () => {
   let service: ApiService;
@@ -55,30 +55,51 @@ describe('ApiService', () => {
     expect(result).toEqual([]);
   });
 
-  it('sendFace envoie la photo en multipart', () => {
-    const image = new Blob(['x'], { type: 'image/jpeg' });
-    let result: boolean | undefined;
-    service.sendFace(image).subscribe((r) => {
+  it('getVisionStatus renvoie null si le service vision est absent', () => {
+    let result: VisionStatus | null | undefined;
+    service.getVisionStatus().subscribe((r) => {
       result = r;
     });
-    const req = http.expectOne(`${API_URL}/faces`);
-    expect(req.request.method).toBe('POST');
-    expect((req.request.body as FormData).get('image')).toBeInstanceOf(Blob);
-    req.flush({});
-    expect(result).toBe(true);
+    http.expectOne(`${API_URL}/vision/status`).flush({ error: 'Service vision injoignable' }, { status: 503, statusText: 'KO' });
+    expect(result).toBeNull();
   });
 
-  it("sendFace renvoie false en cas d'erreur", () => {
-    let result: boolean | undefined;
-    service.sendFace(new Blob(['x'])).subscribe((r) => {
+  it('setVision appelle start ou stop', () => {
+    service.setVision(true).subscribe();
+    http.expectOne({ method: 'POST', url: `${API_URL}/vision/start` }).flush({});
+    service.setVision(false).subscribe();
+    http.expectOne({ method: 'POST', url: `${API_URL}/vision/stop` }).flush({});
+  });
+
+  it("getStreamUrl renvoie l'URL avec ticket", () => {
+    let result: string | null | undefined;
+    service.getStreamUrl().subscribe((r) => {
       result = r;
     });
-    http.expectOne(`${API_URL}/faces`).flush(null, { status: 500, statusText: 'KO' });
-    expect(result).toBe(false);
+    http.expectOne(`${API_URL}/vision/stream-ticket`).flush({ ticket: 't', url: '/api/v1/vision/stream?ticket=t' });
+    expect(result).toBe('/api/v1/vision/stream?ticket=t');
+  });
+
+  it('captureFace envoie nom, statut et nombre d’échantillons', () => {
+    service.captureFace('alice', 'autorise', 5).subscribe();
+    const req = http.expectOne(`${API_URL}/faces/capture`);
+    expect(req.request.body).toEqual({ name: 'alice', status: 'autorise', samples: 5 });
+    req.flush({});
+  });
+
+  it('setFaceStatus et deleteFace ciblent la personne', () => {
+    service.setFaceStatus('alice', 'interdit').subscribe();
+    const patch = http.expectOne({ method: 'PATCH', url: `${API_URL}/faces/alice` });
+    expect(patch.request.body).toEqual({ status: 'interdit' });
+    patch.flush({});
+    service.deleteFace('alice').subscribe();
+    http.expectOne({ method: 'DELETE', url: `${API_URL}/faces/alice` }).flush(null);
   });
 
   it('getAlerts renvoie les alertes', () => {
-    const alerts: Alert[] = [{ id: 1, source: 'esp8266', type: 'gas', ts: 1 }];
+    const alerts: Alert[] = [
+      { id: 1, source: 'esp01', type: 'gas', level: 'critical', acknowledged: false, createdAt: '2026-10-05T12:00:00.000Z' },
+    ];
     let result: Alert[] | undefined;
     service.getAlerts().subscribe((r) => {
       result = r;

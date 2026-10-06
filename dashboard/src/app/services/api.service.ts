@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, catchError, map, of } from 'rxjs';
 import { API_URL } from '../config';
@@ -11,14 +11,53 @@ export interface Metric {
   motion: boolean;
 }
 
+/** Format renvoyé par GET /api/v1/alerts (les plus récentes en premier). */
 export interface Alert {
   id: number;
   source: string;
   type: string;
-  level?: string;
+  level: 'info' | 'warning' | 'critical';
   value?: unknown;
-  ts: number;
+  acknowledged: boolean;
+  createdAt: string;
 }
+
+export type FaceStatus = 'autorise' | 'interdit';
+
+/** Personne enregistrée dans la base de visages du service vision. */
+export interface Face {
+  name: string;
+  status: FaceStatus;
+  samples: number;
+}
+
+/** Format renvoyé par GET /api/v1/vision/status. */
+export interface VisionStatus {
+  enabled: boolean; // la vision doit tourner (sinon arrêtée via /stop)
+  running: boolean;
+  enrolling: boolean; // enrôlement webcam en cours : vision en pause
+  error: string | null;
+  persons: number;
+  detections: { name: string | null; status: string; kind: 'face' | 'person'; score: number }[];
+  ms: number;
+  at: number | null;
+}
+
+/** Résultat d'une action : en cas d'échec, message d'erreur renvoyé par l'API. */
+export interface ActionResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** Même règle que le backend et le service vision. */
+export const FACE_NAME_PATTERN = /^[A-Za-z0-9_-]{1,50}$/;
+
+function failure(err: unknown, fallback: string): Observable<ActionResult> {
+  const message = err instanceof HttpErrorResponse ? err.error?.error : undefined;
+  return of({ ok: false, error: typeof message === 'string' ? message : fallback });
+}
+
+const success = map((): ActionResult => ({ ok: true }));
 
 /** Centralise tous les appels HTTP vers l'API. En cas d'erreur, renvoie une valeur vide. */
 @Injectable({ providedIn: 'root' })
@@ -42,13 +81,49 @@ export class ApiService {
     return this.http.get<Alert[]>(`${API_URL}/alerts`).pipe(catchError(() => of([])));
   }
 
-  /** Envoie une photo du visage (JPEG) en multipart, champ "image". */
-  sendFace(image: Blob): Observable<boolean> {
-    const form = new FormData();
-    form.append('image', image, 'face.jpg');
-    return this.http.post(`${API_URL}/faces`, form).pipe(
-      map(() => true),
-      catchError(() => of(false)),
+  // --- Vision (service ai-vision via le backend) ---
+
+  getVisionStatus(): Observable<VisionStatus | null> {
+    return this.http.get<VisionStatus>(`${API_URL}/vision/status`).pipe(catchError(() => of(null)));
+  }
+
+  /** Active ou coupe la vision permanente (admin, superviseur). */
+  setVision(enabled: boolean): Observable<ActionResult> {
+    return this.http
+      .post(`${API_URL}/vision/${enabled ? 'start' : 'stop'}`, {})
+      .pipe(success, catchError((err) => failure(err, 'Service vision indisponible')));
+  }
+
+  /** URL du flux MJPEG : <img> ne peut pas envoyer le JWT, on demande un ticket de 60 s au backend. */
+  getStreamUrl(): Observable<string | null> {
+    return this.http.post<{ url: string }>(`${API_URL}/vision/stream-ticket`, {}).pipe(
+      map(({ url }) => url),
+      catchError(() => of(null)),
     );
+  }
+
+  // --- Visages (équivalent de enroll.py) ---
+
+  getFaces(): Observable<Face[]> {
+    return this.http.get<Face[]>(`${API_URL}/faces`).pipe(catchError(() => of([])));
+  }
+
+  /** Enrôlement par la caméra Sentinel : la vision est en pause pendant la capture (30 s max). */
+  captureFace(name: string, status: FaceStatus, samples: number): Observable<ActionResult> {
+    return this.http
+      .post(`${API_URL}/faces/capture`, { name, status, samples })
+      .pipe(success, catchError((err) => failure(err, 'Échec de la capture')));
+  }
+
+  setFaceStatus(name: string, status: FaceStatus): Observable<ActionResult> {
+    return this.http
+      .patch(`${API_URL}/faces/${encodeURIComponent(name)}`, { status })
+      .pipe(success, catchError((err) => failure(err, 'Échec de la modification')));
+  }
+
+  deleteFace(name: string): Observable<ActionResult> {
+    return this.http
+      .delete(`${API_URL}/faces/${encodeURIComponent(name)}`)
+      .pipe(success, catchError((err) => failure(err, 'Échec de la suppression')));
   }
 }

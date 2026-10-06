@@ -1,0 +1,59 @@
+<h2>Visages connus</h2>
+
+<table>
+  @for (f of faces(); track f.name) {
+    <tr>
+      <td>{{ f.name }}</td>
+      <td>
+        @if (canEdit()) {
+          <select [value]="f.status" (change)="setStatus(f, $any($event.target).value)" [attr.aria-label]="'Statut de ' + f.name">
+            <option value="autorise">autorisé</option>
+            <option value="interdit">interdit</option>
+          </select>
+        } @else {
+          <span [class]="'tag ' + f.status">{{ f.status === 'autorise' ? 'autorisé' : 'interdit' }}</span>
+        }
+      </td>
+      <td class="muted">{{ f.samples }} éch.</td>
+      @if (canEdit()) {
+        <td><button class="secondary small" (click)="remove(f)">Supprimer</button></td>
+      }
+    </tr>
+  } @empty {
+    <tr><td class="muted">Aucun visage enregistré : toute personne sera considérée comme inconnue</td></tr>
+  }
+</table>
+
+@if (canEdit()) {
+  <h2>Enregistrer une personne</h2>
+  <form [formGroup]="form" (ngSubmit)="capture()">
+    <label>
+      Nom
+      <input type="text" formControlName="name" placeholder="alice" maxlength="50" />
+    </label>
+    <label>
+      Statut
+      <select formControlName="status">
+        <option value="autorise">autorisé</option>
+        <option value="interdit">interdit</option>
+      </select>
+    </label>
+    <label>
+      Échantillons
+      <input type="number" formControlName="samples" min="1" max="30" />
+    </label>
+    @if (form.controls.name.invalid && form.controls.name.dirty) {
+      <p class="msg error">Lettres, chiffres, _ et - uniquement (50 max)</p>
+    }
+    <button type="submit" [disabled]="form.invalid || capturing()">
+      {{ capturing() ? 'Capture en cours…' : 'Capturer avec la caméra Sentinel' }}
+    </button>
+    @if (capturing()) {
+      <p class="msg">Placez-vous seul(e) face à la caméra Sentinel et tournez un peu la tête (30 s max). La détection reprend ensuite.</p>
+    }
+  </form>
+}
+
+@if (message(); as m) {
+  <p class="msg" [class.ok]="m.ok" [class.error]="!m.ok">{{ m.text }}</p>
+}
