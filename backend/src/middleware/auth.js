@@ -2,13 +2,19 @@ const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const config = require("../config");
 
-// Vérifie un JWT et renvoie son contenu ({ sub, username, role }), ou null
-function verifyToken(token) {
+function decode(token) {
     try {
         return jwt.verify(token, config.jwtSecret, { algorithms: ["HS256"] });
     } catch {
         return null;
     }
+}
+
+// Vérifie un JWT de session et renvoie son contenu ({ sub, username, role }), ou null.
+// Un ticket (champ "purpose") n'est jamais accepté comme session.
+function verifyToken(token) {
+    const payload = decode(token);
+    return payload && !payload.purpose ? payload : null;
 }
 
 function signToken(user, roleName) {
@@ -17,6 +23,16 @@ function signToken(user, roleName) {
         config.jwtSecret,
         { algorithm: "HS256", expiresIn: config.jwtExpiresIn },
     );
+}
+
+// Ticket court pour les URL qui ne peuvent pas porter de header (ex : <img src> du flux vidéo)
+function signTicket(user, purpose, expiresIn = "60s") {
+    return jwt.sign({ sub: user.sub, purpose }, config.jwtSecret, { algorithm: "HS256", expiresIn });
+}
+
+function verifyTicket(token, purpose) {
+    const payload = decode(token);
+    return payload && payload.purpose === purpose ? payload : null;
 }
 
 // Comparaison à temps constant pour ne pas révéler la clé caractère par caractère
@@ -63,4 +79,4 @@ function requireDevice(req, res, next) {
     next();
 }
 
-module.exports = { verifyToken, signToken, requireUser, requireRole, requireDevice };
+module.exports = { verifyToken, signToken, signTicket, verifyTicket, requireUser, requireRole, requireDevice };
