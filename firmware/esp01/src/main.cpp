@@ -138,8 +138,6 @@ static void readTamper() {
   }
 }
 
-// Le lien remonte et redescend tout seul : on se contente de suivre ses
-// transitions pour le retour sonore et lumineux.
 static void followLink() {
   link.update();
 

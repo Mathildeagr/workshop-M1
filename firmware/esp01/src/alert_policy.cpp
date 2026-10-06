@@ -13,9 +13,7 @@ void AlertPolicy::setLinkUp(bool up) {
   idle();
 }
 
-// Au repos : respiration verte quand le lien est etabli, eclat bref sinon.
-// Le vert dit qu'aucune alerte n'est en cours, le rythme dit l'etat du reseau.
-// Une respiration se voit de loin sans accrocher l'oeil comme un clignotement.
+// Vert dans les deux cas : aucune alerte. Le rythme porte l'etat du reseau.
 void AlertPolicy::idle() {
   if (_linkUp) _led.set(LedColor::Green, LedMode::Breath, 4000);
   else         _led.set(LedColor::Green, LedMode::Flash, 2000);
