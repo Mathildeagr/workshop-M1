@@ -45,6 +45,7 @@ struct EventRecord {
   const char *detail;   // nullptr si aucune
   float       value;    // NAN si aucune
   EventOrigin origin;
+  const char *cmd_id;   // identifiant de la commande acquittee, nullptr sinon
 };
 
 class ITelemetrySink {

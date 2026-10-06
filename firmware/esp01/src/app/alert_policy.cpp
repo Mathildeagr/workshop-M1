@@ -55,22 +55,25 @@ void AlertPolicy::applyLed(State s) {
 
 void AlertPolicy::report(Family f, State s, const char *detail, float value) {
   const EventRecord e = { alarmEventName(f, s), levelName(s), detail, value,
-                          EventOrigin::Sensor };
+                          EventOrigin::Sensor, nullptr };
   _sink.publishEvent(e);
 }
 
 void AlertPolicy::report(const char *event, const char *level,
                          const char *detail, float value) {
-  const EventRecord e = { event, level, detail, value, EventOrigin::Sensor };
+  const EventRecord e = { event, level, detail, value, EventOrigin::Sensor, nullptr };
   _sink.publishEvent(e);
 }
 
-void AlertPolicy::raise(Family f, State s, const char *detail, float value) {
+// Rejouer la meme commande relance la meme sequence : le backend peut retenter
+// sans precaution particuliere.
+void AlertPolicy::raise(Family f, State s, const char *detail, float value,
+                        const char *cmdId) {
   if (_sound[f]) alarmPlay(f, s);
   if (_light[f]) applyLed(s);
 
   const EventRecord e = { alarmEventName(f, s), levelName(s), detail, value,
-                          EventOrigin::Command };
+                          EventOrigin::Command, cmdId };
   _sink.publishEvent(e);
 }
 

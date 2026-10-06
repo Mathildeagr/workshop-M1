@@ -52,7 +52,9 @@ void MqttClient::begin() {
   _mqtt.begin(_host, _port, _net);
   _mqtt.onMessageAdvanced(onMessage);
 
-  _mqtt.setOptions(15, true, ACK_TIMEOUT_MS);
+  // Session persistante : le broker garde notre abonnement et met de cote les
+  // commandes en QoS 1 emises pendant une coupure, puis les delivre au retour.
+  _mqtt.setOptions(15, false, ACK_TIMEOUT_MS);
 
   // Si le noeud disparait sans prevenir, le broker publie "offline" a sa place.
   _mqtt.setWill(_topicStatus, "offline", true, 1);
@@ -90,11 +92,14 @@ bool MqttClient::sendEvent(const Event &e) {
   char detail[40] = "";
   if (e.detail[0] != '\0') snprintf(detail, sizeof(detail), ",\"detail\":\"%s\"", e.detail);
 
-  char body[256];
+  char ack[40] = "";
+  if (e.cmd_id[0] != '\0') snprintf(ack, sizeof(ack), ",\"cmd_id\":\"%s\"", e.cmd_id);
+
+  char body[288];
   snprintf(body, sizeof(body),
-           "{\"event\":\"%s\",\"level\":\"%s\"%s%s,"
+           "{\"event\":\"%s\",\"level\":\"%s\"%s%s%s,"
            "\"origin\":\"%s\",\"seq\":%lu,\"uptime_s\":%lu}",
-           e.name, e.level, value, detail, eventOriginName(e.origin),
+           e.name, e.level, value, detail, ack, eventOriginName(e.origin),
            (unsigned long)e.seq, (unsigned long)e.uptime_s);
 
   // QoS 1 : bloque jusqu'a l'accuse du broker, au plus ACK_TIMEOUT_MS.
@@ -125,6 +130,9 @@ void MqttClient::publishEvent(const EventRecord &src) {
   if (src.detail != nullptr) strncpy(e.detail, src.detail, sizeof(e.detail) - 1);
   else                       e.detail[0] = '\0';
   e.detail[sizeof(e.detail) - 1] = '\0';
+  if (src.cmd_id != nullptr) strncpy(e.cmd_id, src.cmd_id, sizeof(e.cmd_id) - 1);
+  else                       e.cmd_id[0] = '\0';
+  e.cmd_id[sizeof(e.cmd_id) - 1] = '\0';
   e.value    = src.value;
   e.origin   = src.origin;
   e.seq      = ++_seq;   // un trou dans la suite signale une perte au backend

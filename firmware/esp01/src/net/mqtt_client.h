@@ -41,6 +41,7 @@ private:
     char        detail[24];
     float       value;
     EventOrigin origin;
+    char        cmd_id[24];
     uint32_t    seq;
     uint32_t    uptime_s;   // horodatage relatif : le noeud n'a pas d'heure
   };

@@ -52,6 +52,9 @@ void CommandRouter::onCommand(const char *payload, size_t length) {
   Family f;
   State  s;
   if (alarmLookup(event, f, s)) {
-    _policy.raise(f, s, doc["detail"] | (const char *)nullptr, doc["value"] | NAN);
+    _policy.raise(f, s,
+                  doc["detail"] | (const char *)nullptr,
+                  doc["value"] | NAN,
+                  doc["id"] | (const char *)nullptr);
   }
 }

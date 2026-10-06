@@ -27,7 +27,8 @@ public:
   void report(Family f, State s, const char *detail = nullptr, float value = NAN);
   void report(const char *event, const char *level,
               const char *detail = nullptr, float value = NAN);
-  void raise(Family f, State s, const char *detail = nullptr, float value = NAN);
+  void raise(Family f, State s, const char *detail = nullptr, float value = NAN,
+             const char *cmdId = nullptr);
 
   // Le module n'emet aucun evenement de la famille intrusion : ceux-la
   // viennent de la vision. Presence et secousse relevent du sabotage.

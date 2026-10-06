@@ -72,5 +72,9 @@ void SerialSink::publishEvent(const EventRecord &e) {
     Serial.print(F(" = "));
     Serial.print(e.value, 2);
   }
+  if (e.cmd_id != nullptr && e.cmd_id[0] != '\0') {
+    Serial.print(F(" acquitte "));
+    Serial.print(e.cmd_id);
+  }
   Serial.println();
 }
