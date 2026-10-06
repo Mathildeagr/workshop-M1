@@ -1,0 +1,43 @@
+.title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.state { font-size: 13px; color: var(--muted); }
+.state.ok { color: var(--ok); }
+.state.warn { color: #f5b301; }
+
+.viewer {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+
+img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--muted);
+}
+
+.actions { margin-top: 12px; }
+
+.msg { margin: 8px 0 0; font-size: 14px; color: var(--muted); }
+.msg.error { color: var(--danger-text); }
+
+/* Mêmes couleurs que les cadres dessinés par le service vision */
+.tag.autorise { color: var(--ok); }
+.tag.interdit { color: var(--danger-text); }
+.tag.inconnu { color: #ffa500; }
+.tag.non_identifie { color: #c86ec8; }

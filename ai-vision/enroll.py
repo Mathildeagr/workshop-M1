@@ -12,12 +12,21 @@ from face_engine import FaceEngine
 from vision import BACKENDS, open_camera
 
 
-def capture_from_camera(engine, samples, camera_index, backend=None, mjpg=None):
-    """On capte quelques embeddings devant la caméra, à intervalle régulier"""
+def capture_from_camera(engine, samples, camera_index, backend=None, mjpg=None,
+                        display=True, on_frame=None, timeout=None):
+    """On capte quelques embeddings devant la caméra, à intervalle régulier.
+
+    display=False : sans fenêtre (appel depuis server.py), on_frame(image) reçoit l'aperçu annoté
+    et timeout (s) arrête la capture avec les échantillons déjà obtenus.
+    """
     cap = open_camera(camera_index, backend=backend, mjpg=mjpg)
     embeddings, last = [], 0.0
+    deadline = time.time() + timeout if timeout else None
     print("Regarde la caméra et tourne un peu la tête. [q] pour annuler")
     while len(embeddings) < samples:
+        if deadline and time.time() > deadline:
+            print(f"Temps écoulé : {len(embeddings)}/{samples} échantillon(s)")
+            break
         ok, frame = cap.read()
         if not ok:
             continue
@@ -32,12 +41,16 @@ def capture_from_camera(engine, samples, camera_index, backend=None, mjpg=None):
         elif len(faces) > 1:
             msg += "  - une seule personne devant la caméra !"
         cv2.putText(frame, msg, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-        cv2.imshow("Enrolement", frame)
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            embeddings = []
-            break
+        if on_frame:
+            on_frame(frame)
+        if display:
+            cv2.imshow("Enrolement", frame)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                embeddings = []
+                break
     cap.release()
-    cv2.destroyAllWindows()
+    if display:
+        cv2.destroyAllWindows()
     return embeddings
 
 

@@ -1,17 +1,18 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { switchMap, timer } from 'rxjs';
 import { Router } from '@angular/router';
-import { FaceScan } from '../../components/face-scan/face-scan';
+import { FacesManager } from '../../components/faces-manager/faces-manager';
 import { LineChart } from '../../components/line-chart/line-chart';
-import { REFRESH_MS, WEBCAM_URL } from '../../config';
+import { VisionFeed } from '../../components/vision-feed/vision-feed';
+import { REFRESH_MS } from '../../config';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-dashboard',
-  imports: [LineChart, FaceScan, DatePipe],
+  imports: [LineChart, VisionFeed, FacesManager, DatePipe],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.css',
 })
@@ -34,8 +35,8 @@ export class Dashboard {
   humidity = computed(() => this.metrics().map((m) => m.humidity));
   gas = computed(() => this.metrics().map((m) => m.gas));
 
-  webcamUrl = WEBCAM_URL;
-  webcamError = signal(false);
+  // Base de visages (données biométriques) : pas pour le rôle lecteur
+  canSeeFaces = computed(() => ['admin', 'superviseur'].includes(this.auth.user()?.role ?? ''));
 
   logout() {
     this.auth.logout();

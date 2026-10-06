@@ -9,6 +9,8 @@ const { verifyToken } = require("./middleware/auth");
 const authRouter = require("./routes/auth");
 const usersRouter = require("./routes/users");
 const alertsRouter = require("./routes/alerts");
+const visionRouter = require("./routes/vision");
+const facesRouter = require("./routes/faces");
 
 let dbReady = false;
 
@@ -42,6 +44,9 @@ const requireDb = (req, res, next) =>
 app.use("/api/v1/auth", requireDb, authRouter);
 app.use("/api/v1/users", requireDb, usersRouter);
 app.use("/api/v1/alerts", requireDb, alertsRouter(io));
+// Service vision (ai-vision/server.py) : pas besoin de la base, 503 si le service est absent
+app.use("/api/v1/vision", visionRouter);
+app.use("/api/v1/faces", facesRouter);
 
 app.use((req, res) => res.status(404).json({ error: "Route inconnue" }));
 app.use(errorHandler);

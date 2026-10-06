@@ -24,16 +24,13 @@
     }
   </section>
 
-  <section class="card webcam">
-    <h2>Webcam</h2>
-    @if (!webcamError()) {
-      <img [src]="webcamUrl" alt="Flux webcam" (error)="webcamError.set(true)" />
-    } @else {
-      <p class="muted">Flux vidéo indisponible</p>
+  <section class="card vision">
+    <app-vision-feed />
+    @if (canSeeFaces()) {
+      <hr />
+      <app-faces-manager />
     }
   </section>
-
-  <section class="card"><app-face-scan /></section>
 
   <section class="card"><app-line-chart label="Température" unit="°C" color="#ff6b4a" [values]="temperature()" /></section>
   <section class="card"><app-line-chart label="Humidité" unit="%" color="#4f8cff" [values]="humidity()" /></section>
