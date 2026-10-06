@@ -7,7 +7,8 @@
 class SerialSink : public ITelemetrySink {
 public:
   void publish(const TelemetryFrame &frame) override;
-  void publishAlert(Family f, State s, const char *detail) override;
+  void publishEvent(const char *event, const char *level,
+                    const char *detail, float value) override;
 
 private:
   void stamp(uint32_t uptime_s);

@@ -6,20 +6,26 @@
 #include "tamper.h"
 #include "telemetry.h"
 
-// Traduit les evenements capteurs en alertes, et applique l'alerte au buzzer,
-// a la LED et au puits de telemetrie. Point d'entree unique : raise() sera
-// aussi appele par les commandes recues du backend.
+// Deux responsabilites distinctes :
+//   report() transmet un evenement sans rien declencher localement,
+//   raise()  declenche en plus le buzzer et la LED.
+// Les capteurs se contentent de rapporter ; c'est le backend, qui voit les
+// trois noeuds, qui decide d'alarmer.
 class AlertPolicy {
 public:
   AlertPolicy(StatusLed &led, ITelemetrySink &sink);
 
   void begin();
   void setLinkUp(bool up);
-  void raise(Family f, State s, const char *detail = nullptr);
   void idle();
 
+  void report(Family f, State s, const char *detail = nullptr, float value = NAN);
+  void report(const char *event, const char *level,
+              const char *detail = nullptr, float value = NAN);
+  void raise(Family f, State s, const char *detail = nullptr, float value = NAN);
+
   void onPresence(const PresenceReading &r);
-  void onTamper(bool fromTilt, TamperLevel level);
+  void onTamper(bool fromTilt, TamperLevel level, uint16_t episodes);
 
 private:
   void applyLed(State s);

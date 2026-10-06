@@ -9,6 +9,8 @@
 #include "timesource.h"
 #include "telemetry.h"
 #include "serial_sink.h"
+#include "backend_client.h"
+#include "tee_sink.h"
 #include "alert_policy.h"
 
 #include "climate.h"
@@ -45,7 +47,10 @@ static WifiLink     link(WIFI_SSID, WIFI_PASSWORD,
 static StatusLed    statusLed(PIN_LED_RED, PIN_LED_GREEN);
 static StatusScreen screen(0x3C);
 static UptimeClock  uptimeClock;
-static SerialSink   serialSink;
+static SerialSink    serialSink;
+static BackendClient backendClient(link, BACKEND_HOST, BACKEND_PORT,
+                                   BACKEND_PATH, DEVICE_API_KEY);
+static TeeSink       sinks(serialSink, backendClient);
 
 static IClimateSensor  &climate   = dhtDevice;
 static IGasSensor      &gas       = mq2Device;
@@ -53,7 +58,7 @@ static IPresenceSensor &presence  = pirDevice;
 static ITamperSensor   &tilt      = tiltDevice;
 static ITamperSensor   &optic     = opticDevice;
 static ITimeSource     &wallClock = uptimeClock;
-static ITelemetrySink  &telemetry = serialSink;
+static ITelemetrySink  &telemetry = sinks;
 
 static AlertPolicy policy(statusLed, telemetry);
 
@@ -61,6 +66,7 @@ static TelemetryFrame frame;
 static ScreenData     screenData;
 static uint32_t       lastTelemetry = 0;
 static LinkState      lastLinkState = LinkState::Down;
+static bool           bootReported  = false;
 static bool           climateFaultReported = false;
 static bool           gasFaultReported     = false;
 
@@ -75,6 +81,7 @@ static void readClimate() {
       screenData.climate_valid   = true;
       screenData.temperature_c   = r.temperature_c;
       screenData.humidity_pct    = r.humidity_pct;
+      if (climateFaultReported) policy.report("sensor_recovered", "info", "dht22");
       climateFaultReported       = false;
       break;
     case ReadStatus::Error:
@@ -83,6 +90,7 @@ static void readClimate() {
         screenData.climate_valid = false;
         if (!climateFaultReported) {
           jinglePlay(JIN_ERROR);
+          policy.report("sensor_fault", "warning", "dht22");
           climateFaultReported = true;
         }
       }
@@ -101,6 +109,7 @@ static void readGas() {
       frame.gas_ratio     = r.ratio;
       frame.gas_warming   = r.warming_up;
       frame.gas_saturated = r.saturated;
+      if (gasFaultReported) policy.report("sensor_recovered", "info", "mq2");
       gasFaultReported    = false;
       break;
     case ReadStatus::Error:
@@ -108,6 +117,7 @@ static void readGas() {
         frame.gas_valid = false;
         if (!gasFaultReported) {
           jinglePlay(JIN_ERROR);
+          policy.report("sensor_fault", "warning", "mq2");
           gasFaultReported = true;
         }
       }
@@ -130,11 +140,11 @@ static void readTamper() {
   TamperReading r;
   if (tilt.read(r) == ReadStatus::Ok) {
     frame.tilt = r.level;
-    policy.onTamper(true, r.level);
+    policy.onTamper(true, r.level, r.episodes_in_window);
   }
   if (optic.read(r) == ReadStatus::Ok) {
     frame.optic = r.level;
-    policy.onTamper(false, r.level);
+    policy.onTamper(false, r.level, r.episodes_in_window);
   }
 }
 
@@ -146,6 +156,11 @@ static void followLink() {
 
   if (now == LinkState::Up) {
     jinglePlay(JIN_WIFI_OK);
+    // Le demarrage ne peut etre annonce qu'une fois le lien disponible.
+    if (!bootReported) {
+      policy.report("node_boot", "info");
+      bootReported = true;
+    }
     Serial.print(F("wifi connecte, adresse "));
     Serial.print(link.ipText());
     Serial.print(F(", rssi "));
@@ -238,4 +253,5 @@ void loop() {
 
   refreshScreen();
   publishTelemetry();
+  telemetry.update();
 }

@@ -55,13 +55,21 @@ void SerialSink::publish(const TelemetryFrame &f) {
   Serial.println(f.wifi_up ? F("ok") : F("down"));
 }
 
-void SerialSink::publishAlert(Family f, State s, const char *detail) {
+void SerialSink::publishEvent(const char *event, const char *level,
+                              const char *detail, float value) {
   stamp(millis() / 1000UL);
-  Serial.print(F("ALERTE "));
-  Serial.print(alarmEventName(f, s));
+  Serial.print(F("evenement "));
+  Serial.print(event);
+  Serial.print(F(" ["));
+  Serial.print(level);
+  Serial.print(']');
   if (detail != nullptr && detail[0] != '\0') {
-    Serial.print(F("  "));
+    Serial.print(' ');
     Serial.print(detail);
+  }
+  if (!isnan(value)) {
+    Serial.print(F(" = "));
+    Serial.print(value, 2);
   }
   Serial.println();
 }

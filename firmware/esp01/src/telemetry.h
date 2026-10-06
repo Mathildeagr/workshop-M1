@@ -35,6 +35,13 @@ public:
   virtual ~ITelemetrySink() {}
 
   virtual void begin() {}
-  virtual void publish(const TelemetryFrame &frame)                       = 0;
-  virtual void publishAlert(Family f, State s, const char *detail)        = 0;
+  virtual void update() {}
+
+  virtual void publish(const TelemetryFrame &frame) = 0;
+
+  // level : info, warning ou critical.
+  // detail : precision facultative, nullptr si aucune.
+  // value : NAN pour ne rien transmettre.
+  virtual void publishEvent(const char *event, const char *level,
+                            const char *detail, float value) = 0;
 };
