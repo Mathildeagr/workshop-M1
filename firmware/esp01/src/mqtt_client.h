@@ -2,6 +2,7 @@
 
 #include <PubSubClient.h>
 #include <WiFiClient.h>
+#include "command.h"
 #include "network.h"
 #include "telemetry.h"
 
@@ -15,6 +16,8 @@ class MqttClient : public ITelemetrySink {
 public:
   MqttClient(const WifiLink &link, const char *host, uint16_t port,
              const char *deviceId, const char *user, const char *password);
+
+  void setCommandSink(ICommandSink *sink) { _commands = sink; }
 
   void begin() override;
   void update() override;
@@ -30,6 +33,7 @@ public:
   const char *topicEvents() const { return _topicEvents; }
   const char *topicTelemetry() const { return _topicTelemetry; }
   const char *topicStatus() const { return _topicStatus; }
+  const char *topicCommand() const { return _topicCommand; }
 
 private:
   struct Event {
@@ -40,6 +44,7 @@ private:
     uint32_t uptime_s;   // horodatage relatif : le noeud n'a pas d'heure
   };
 
+  static void trampoline(char *topic, uint8_t *payload, unsigned int length);
   bool reconnect();
   bool sendEvent(const Event &e);
   void enqueue(const Event &e);
@@ -57,6 +62,9 @@ private:
   char _topicEvents[48];
   char _topicTelemetry[48];
   char _topicStatus[48];
+  char _topicCommand[48];
+
+  ICommandSink *_commands;
 
   static const uint8_t QUEUE_SIZE = 8;
   Event    _queue[QUEUE_SIZE];

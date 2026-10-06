@@ -35,4 +35,7 @@ void alarmUpdate();
 bool        alarmIsPlaying();
 const char *alarmCurrentLabel();
 const char *alarmEventName(Family f, State s);
+
+// Retrouve la famille et l'etat a partir du nom recu du backend.
+bool alarmLookup(const char *name, Family &f, State &s);
 uint8_t     alarmPriority(Family f, State s);

@@ -19,6 +19,9 @@ public:
   void setLinkUp(bool up);
   void idle();
 
+  // family = FAM_COUNT pour agir sur toutes les familles.
+  void setEnabled(uint8_t family, bool sound, bool light, bool enabled);
+
   void report(Family f, State s, const char *detail = nullptr, float value = NAN);
   void report(const char *event, const char *level,
               const char *detail = nullptr, float value = NAN);
@@ -33,6 +36,8 @@ private:
   void applyLed(State s);
 
   bool            _linkUp;
+  bool            _sound[FAM_COUNT];
+  bool            _light[FAM_COUNT];
   StatusLed      &_led;
   ITelemetrySink &_sink;
 };

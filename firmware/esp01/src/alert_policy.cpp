@@ -10,7 +10,22 @@ static const char *levelName(State s) {
 }
 
 AlertPolicy::AlertPolicy(StatusLed &led, ITelemetrySink &sink)
-  : _linkUp(false), _led(led), _sink(sink) {}
+  : _linkUp(false), _led(led), _sink(sink) {
+  for (uint8_t i = 0; i < FAM_COUNT; i++) {
+    _sound[i] = true;
+    _light[i] = true;
+  }
+}
+
+void AlertPolicy::setEnabled(uint8_t family, bool sound, bool light, bool enabled) {
+  for (uint8_t i = 0; i < FAM_COUNT; i++) {
+    if (family != FAM_COUNT && i != family) continue;
+    if (sound) _sound[i] = enabled;
+    if (light) _light[i] = enabled;
+  }
+  if (!enabled && sound) alarmStop();
+  if (!enabled && light) idle();
+}
 
 void AlertPolicy::begin() {
   idle();
@@ -48,8 +63,8 @@ void AlertPolicy::report(const char *event, const char *level,
 }
 
 void AlertPolicy::raise(Family f, State s, const char *detail, float value) {
-  alarmPlay(f, s);
-  applyLed(s);
+  if (_sound[f]) alarmPlay(f, s);
+  if (_light[f]) applyLed(s);
   report(f, s, detail, value);
 }
 

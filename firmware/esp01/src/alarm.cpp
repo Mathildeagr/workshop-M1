@@ -33,7 +33,7 @@ static const Pattern PATTERNS[FAM_COUNT][ST_COUNT] = {
 };
 
 static const char *const NAMES[FAM_COUNT][ST_COUNT] = {
-  { "intrusion_suspected", "intrusion_unknown", "intrusion_prohibited", "intrusion_cleared" },
+  { "intrusion_unknown", "intrusion_unidentified", "intrusion_prohibited", "intrusion_cleared" },
   { "tamper_suspected",    "tamper_opened",     "tamper_removed",       "tamper_cleared"    },
   { "env_drift",           "env_anomaly",       "env_critical",         "env_cleared"       }
 };
@@ -140,4 +140,18 @@ void alarmUpdate() {
 bool        alarmIsPlaying() { return s_active; }
 const char *alarmCurrentLabel() { return s_active ? s_label : nullptr; }
 const char *alarmEventName(Family f, State s) { return NAMES[f][s]; }
+
+bool alarmLookup(const char *name, Family &f, State &s) {
+  if (name == nullptr) return false;
+  for (uint8_t fi = 0; fi < FAM_COUNT; fi++) {
+    for (uint8_t si = 0; si < ST_COUNT; si++) {
+      if (strcmp(name, NAMES[fi][si]) == 0) {
+        f = (Family)fi;
+        s = (State)si;
+        return true;
+      }
+    }
+  }
+  return false;
+}
 uint8_t     alarmPriority(Family f, State s) { return PRIORITY[f][s]; }

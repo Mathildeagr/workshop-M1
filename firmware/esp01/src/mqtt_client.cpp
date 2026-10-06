@@ -1,6 +1,8 @@
 #include "mqtt_client.h"
 #include <math.h>
 
+static MqttClient *s_self = nullptr;
+
 MqttClient::MqttClient(const WifiLink &link, const char *host, uint16_t port,
                        const char *deviceId, const char *user, const char *password)
   : _link(link),
@@ -13,20 +15,31 @@ MqttClient::MqttClient(const WifiLink &link, const char *host, uint16_t port,
     _head(0),
     _count(0),
     _dropped(0),
+    _commands(nullptr),
     _lastRetry(0),
     _lastFlush(0) {
-  _topicEvents[0] = _topicTelemetry[0] = _topicStatus[0] = '\0';
+  _topicEvents[0] = _topicTelemetry[0] = _topicStatus[0] = _topicCommand[0] = '\0';
+  s_self = this;
+}
+
+// PubSubClient ne rappelle qu'une fonction libre : on passe par l'instance.
+void MqttClient::trampoline(char *topic, uint8_t *payload, unsigned int length) {
+  (void)topic;
+  if (s_self == nullptr || s_self->_commands == nullptr) return;
+  s_self->_commands->onCommand((const char *)payload, length);
 }
 
 void MqttClient::begin() {
   snprintf(_topicEvents,    sizeof(_topicEvents),    "sentinel/%s/events",    _deviceId);
   snprintf(_topicTelemetry, sizeof(_topicTelemetry), "sentinel/%s/telemetry", _deviceId);
   snprintf(_topicStatus,    sizeof(_topicStatus),    "sentinel/%s/status",    _deviceId);
+  snprintf(_topicCommand,   sizeof(_topicCommand),   "sentinel/%s/command",   _deviceId);
 
   _mqtt.setServer(_host, _port);
   // La trame de mesures depasse les 256 octets par defaut.
   _mqtt.setBufferSize(BUFFER_SIZE);
   _mqtt.setKeepAlive(15);
+  _mqtt.setCallback(trampoline);
 }
 
 bool MqttClient::reconnect() {
@@ -43,6 +56,7 @@ bool MqttClient::reconnect() {
                                 _topicStatus, 1, true, "offline");
   if (ok) {
     _mqtt.publish(_topicStatus, "online", true);
+    _mqtt.subscribe(_topicCommand, 1);
     Serial.print(F("broker joint, topic "));
     Serial.println(_topicEvents);
   }

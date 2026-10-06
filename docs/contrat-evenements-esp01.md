@@ -24,7 +24,7 @@ changement de port ou de route côté API ne demande aucun reflashage.
 | `sentinel/esp01/events` | publication | non | événements, §3 |
 | `sentinel/esp01/telemetry` | publication | non | mesures, §4 |
 | `sentinel/esp01/status` | publication | **oui** | `online` / `offline` |
-| `sentinel/esp01/command` | abonnement | — | commandes descendantes, à définir |
+| `sentinel/esp01/command` | abonnement | non | commandes descendantes, §7 |
 
 Le client MQTT s'identifie avec le `client-id` `esp01`.
 
@@ -160,7 +160,7 @@ une valeur manquante se distingue ainsi d'une mesure valide qui vaut zéro.
 
 | Événement | Émetteur |
 |---|---|
-| `intrusion_suspected`, `intrusion_unknown`, `intrusion_prohibited` | script de vision, sur le PC serveur |
+| `intrusion_unknown`, `intrusion_unidentified`, `intrusion_prohibited`, `intrusion_cleared` | script de vision, sur le PC serveur |
 | `env_drift`, `env_anomaly`, `env_critical` | modèle de maintenance prédictive, sur le PC serveur |
 
 **Aucun événement de la famille `intrusion` ne vient du nœud.** Son détecteur de
@@ -193,14 +193,82 @@ attendent les commandes sur `sentinel/esp01/command`.
 
 ---
 
-## 7. Points à trancher
+## 7. Commandes reçues
 
-1. **Le format des commandes descendantes** sur `sentinel/esp01/command`. Le
-   firmware attend un nom de famille et un état, pas des durées : les séquences
-   sonores et lumineuses restent embarquées, pour qu'une modification de rythme
-   ne demande pas un déploiement backend.
-2. **La conservation de `detail` et `uptime_s`** côté API, voir §2.
-3. **Le passage en MQTTS**, exigé par le sujet pour jeudi : certificat du broker,
+Topic `sentinel/esp01/command`. Le nœud ignore silencieusement ce qu'il ne
+comprend pas : le topic peut porter des instructions destinées à d'autres
+briques.
+
+### 7.1 Déclencher un signal
+
+Même format que les événements publiés. Le nœud joue la séquence sonore et
+lumineuse correspondante.
+
+```json
+{ "event": "intrusion_prohibited", "level": "critical" }
+```
+
+**Les séquences restent embarquées.** Le backend envoie un nom, jamais des
+durées ni des fréquences : retoucher un rythme ne doit pas demander un
+déploiement backend.
+
+Noms acceptés : les six de la famille sabotage et environnement listés en §3 et
+§5, plus les quatre de la famille intrusion.
+
+| `event` | Signification | Gravité |
+|---|---|---|
+| `intrusion_unknown` | personne détectée, visage absent de la base | la plus faible |
+| `intrusion_unidentified` | **visage non identifiable** : cagoule, masque, dos tourné | intermédiaire |
+| `intrusion_prohibited` | visage reconnu, présent en liste noire | la plus forte |
+| `intrusion_cleared` | zone redevenue vide | — |
+
+Un visage délibérément dissimulé est plus inquiétant qu'un visage simplement
+inconnu de la base, qui peut être celui d'un visiteur légitime.
+`intrusion_unidentified` porte donc le signal le plus marqué des deux, et
+`intrusion_unknown` le plus discret.
+
+### 7.2 Couper ou rétablir un signal
+
+```json
+{ "event": "deactivate", "target": "sabotage", "signal": "sonore" }
+{ "event": "activate",   "target": "tout",     "signal": "tous" }
+```
+
+| Champ | Valeurs | Défaut |
+|---|---|---|
+| `target` | `intrusion`, `sabotage`, `environnement`, `tout` | `tout` |
+| `signal` | `sonore`, `lumineux`, `tous` | `tous` |
+
+Couper le son n'arrête pas la remontée des événements : le nœud continue de
+rapporter, il se tait seulement. C'est ce qu'il faut pendant une démonstration
+ou une intervention de maintenance.
+
+Une coupure du signal sonore interrompt immédiatement l'alarme en cours ; une
+coupure du signal lumineux ramène la LED à son état de repos.
+
+Les réglages ne survivent pas à un redémarrage : au boot, tout est actif.
+
+### 7.3 Régler la sensibilité
+
+```json
+{ "event": "modify_sensitivity", "target": "environnement", "mode": "high" }
+```
+
+| Champ | Valeurs |
+|---|---|
+| `mode` | `low`, `medium`, `high` |
+
+**Le nœud ne lit pas cette commande.** Elle est destinée à la brique d'analyse
+environnementale, qui ajuste le seuil de détection de son modèle. Elle figure
+ici parce qu'elle circule sur le même broker et doit faire partie du vocabulaire
+commun ; à publier sur le topic de la brique concernée.
+
+---
+
+## 8. Points à trancher
+
+1. **La conservation de `detail` et `uptime_s`** côté API, voir §2.
+2. **Le passage en MQTTS**, exigé par le sujet pour jeudi : certificat du broker,
    et 16 à 25 Ko de RAM supplémentaires côté nœud. La marge actuelle le permet.
 4. **L'authentification du broker** : identifiants par nœud, ou accès ouvert sur
    le réseau de table isolé.

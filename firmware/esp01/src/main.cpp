@@ -11,6 +11,7 @@
 #include "serial_sink.h"
 #include "mqtt_client.h"
 #include "tee_sink.h"
+#include "command_router.h"
 #include "alert_policy.h"
 
 #include "climate.h"
@@ -60,7 +61,8 @@ static ITamperSensor   &optic     = opticDevice;
 static ITimeSource     &wallClock = uptimeClock;
 static ITelemetrySink  &telemetry = sinks;
 
-static AlertPolicy policy(statusLed, telemetry);
+static AlertPolicy   policy(statusLed, telemetry);
+static CommandRouter commands(policy);
 
 static TelemetryFrame frame;
 static ScreenData     screenData;
@@ -203,6 +205,7 @@ void setup() {
   presence.begin();
   tilt.begin();
   optic.begin();
+  mqtt.setCommandSink(&commands);
   telemetry.begin();
   policy.begin();
   link.begin();
