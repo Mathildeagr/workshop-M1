@@ -22,4 +22,19 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "${PWD}/mosquitto/config:/config" alpine c
 echo "Lancement des conteneurs..."
 docker compose up -d
 
+# 6. Service vision (ai-vision/server.py) sur l'hôte : Docker Desktop ne transmet pas la webcam aux conteneurs
+# Hôte, port et jeton lus depuis ai-vision/.env (SENTINEL_SERVICE_*)
+if curl -s -o /dev/null --max-time 2 http://127.0.0.1:5000/health; then
+    echo "Service vision déjà lancé sur le port 5000"
+elif [ -x ./ai-vision/.venv/Scripts/python.exe ]; then
+    echo "Lancement du service vision (fenêtre séparée)..."
+    (cd ai-vision && powershell.exe -NoProfile -Command \
+        "Start-Process -FilePath '.venv\Scripts\python.exe' -ArgumentList 'server.py' -WindowStyle Minimized")
+elif [ -x ./ai-vision/.venv/bin/python ]; then
+    echo "Lancement du service vision (logs : ai-vision/server.log)..."
+    (cd ai-vision && nohup .venv/bin/python server.py > server.log 2>&1 &)
+else
+    echo "Service vision non lancé : venv ai-vision/.venv introuvable (voir ai-vision/README.md)"
+fi
+
 echo "Infrastructure déployée avec succès ! Accès via https://localhost"
