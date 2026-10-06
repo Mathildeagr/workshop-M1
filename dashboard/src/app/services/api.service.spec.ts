@@ -78,7 +78,9 @@ describe('ApiService', () => {
   });
 
   it('getAlerts renvoie les alertes', () => {
-    const alerts: Alert[] = [{ id: 1, source: 'esp8266', type: 'gas', ts: 1 }];
+    const alerts: Alert[] = [
+      { id: 1, source: 'esp01', type: 'gas', level: 'critical', acknowledged: false, createdAt: '2026-10-05T12:00:00.000Z' },
+    ];
     let result: Alert[] | undefined;
     service.getAlerts().subscribe((r) => {
       result = r;

@@ -28,7 +28,7 @@ export class Dashboard {
   last = computed(() => this.metrics().at(-1));
   // Boîtier considéré en ligne s'il a envoyé une mesure dans les 10 dernières secondes
   online = computed(() => !!this.last() && Date.now() - this.last()!.ts < 10_000);
-  recentAlerts = computed(() => this.alerts().slice(-5).reverse());
+  recentAlerts = computed(() => this.alerts().slice(0, 5));   // l'API renvoie les plus récentes en premier
 
   temperature = computed(() => this.metrics().map((m) => m.temperature));
   humidity = computed(() => this.metrics().map((m) => m.humidity));

@@ -18,7 +18,7 @@
 
     <h2>Dernières alertes</h2>
     @for (a of recentAlerts(); track a.id) {
-      <p class="alert">{{ a.ts | date: 'HH:mm:ss' }} · {{ a.type }} ({{ a.source }})</p>
+      <p class="alert">{{ a.createdAt | date: 'HH:mm:ss' }} · {{ a.type }} ({{ a.source }})</p>
     } @empty {
       <p class="muted">Aucune alerte</p>
     }
