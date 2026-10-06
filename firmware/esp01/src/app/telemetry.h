@@ -13,12 +13,14 @@ struct TelemetryFrame {
   float    temperature_c;
   float    humidity_pct;
   float    dew_point_c;
+  uint32_t climate_age_ms;   // depuis la mesure, pas depuis l'envoi
 
   bool     gas_valid;
   uint16_t gas_raw;
   float    gas_ratio;
   bool     gas_warming;
   bool     gas_saturated;
+  uint32_t gas_age_ms;
 
   bool     presence;
   bool     presence_settling;

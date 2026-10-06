@@ -151,13 +151,16 @@ void MqttClient::publish(const TelemetryFrame &f) {
 
   if (f.climate_valid) {
     n += snprintf(body + n, sizeof(body) - n,
-                  ",\"temperature_c\":%.1f,\"humidity_pct\":%.1f,\"dew_point_c\":%.1f",
-                  (double)f.temperature_c, (double)f.humidity_pct, (double)f.dew_point_c);
+                  ",\"temperature_c\":%.1f,\"humidity_pct\":%.1f,\"dew_point_c\":%.1f"
+                  ",\"climate_age_ms\":%lu",
+                  (double)f.temperature_c, (double)f.humidity_pct, (double)f.dew_point_c,
+                  (unsigned long)f.climate_age_ms);
   }
   if (f.gas_valid) {
     n += snprintf(body + n, sizeof(body) - n,
-                  ",\"gas_raw\":%u,\"gas_warming\":%s",
-                  (unsigned)f.gas_raw, f.gas_warming ? "true" : "false");
+                  ",\"gas_raw\":%u,\"gas_warming\":%s,\"gas_age_ms\":%lu",
+                  (unsigned)f.gas_raw, f.gas_warming ? "true" : "false",
+                  (unsigned long)f.gas_age_ms);
     if (!isnan(f.gas_ratio)) {
       n += snprintf(body + n, sizeof(body) - n, ",\"gas_ratio\":%.3f", (double)f.gas_ratio);
     }

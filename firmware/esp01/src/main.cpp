@@ -64,6 +64,8 @@ static uint32_t       lastTelemetry = 0;
 static LinkState      lastLinkState = LinkState::Down;
 static bool           bootReported  = false;
 static bool           clockReported = false;
+static uint32_t       lastClimateAt = 0;
+static uint32_t       lastGasAt     = 0;
 static bool           climateFaultReported = false;
 static bool           gasFaultReported     = false;
 
@@ -78,6 +80,7 @@ static void readClimate() {
       screenData.climate_valid   = true;
       screenData.temperature_c   = r.temperature_c;
       screenData.humidity_pct    = r.humidity_pct;
+      lastClimateAt              = r.timestamp_ms;
       if (climateFaultReported) policy.report("sensor_recovered", "info", "dht22");
       climateFaultReported       = false;
       break;
@@ -106,6 +109,7 @@ static void readGas() {
       frame.gas_ratio     = r.ratio;
       frame.gas_warming   = r.warming_up;
       frame.gas_saturated = r.saturated;
+      lastGasAt           = r.timestamp_ms;
       if (gasFaultReported) policy.report("sensor_recovered", "info", "mq2");
       gasFaultReported    = false;
       break;
@@ -179,6 +183,10 @@ static void publishTelemetry() {
 
   frame.uptime_s = wallClock.uptimeSeconds();
   frame.wifi_up  = link.isConnected();
+  // La trame part plus souvent que certains capteurs ne sont lus : sans cet
+  // age, rien ne distingue une mesure fraiche d'une valeur repetee.
+  frame.climate_age_ms = now - lastClimateAt;
+  frame.gas_age_ms     = now - lastGasAt;
   telemetry.publish(frame);
 }
 
