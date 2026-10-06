@@ -44,6 +44,20 @@ services:
       - traefik.tcp.routers.mqtt.entrypoints=mqtt
       - traefik.tcp.services.mqtt.loadbalancer.server.port=1883
 
+  # Serveur de temps du réseau de table. Le sous-réseau est étanche, donc
+  # pool.ntp.org est injoignable : les nœuds IoT se synchronisent ici.
+  ntp:
+    image: cturra/ntp:latest
+    container_name: sentinel-ntp
+    restart: unless-stopped
+    ports:
+      - "123:123/udp"
+    environment:
+      - NTP_SERVERS=time.cloudflare.com   # amont, si la machine a un accès sortant
+      - LOG_LEVEL=0
+    networks:
+      - edge
+
   database: #TODO sécurisé l'accès (lecture/ecriture) via mot de passe en .env
     image: postgres:16-alpine
     container_name: sentinel-database
