@@ -147,7 +147,7 @@ static void followLink() {
   if (now == LinkState::Up) {
     jinglePlay(JIN_WIFI_OK);
     Serial.print(F("wifi connecte, adresse "));
-    Serial.print(link.statusText());
+    Serial.print(link.ipText());
     Serial.print(F(", rssi "));
     Serial.print(link.rssi());
     Serial.println(F(" dBm"));

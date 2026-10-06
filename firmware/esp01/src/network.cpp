@@ -30,6 +30,8 @@ WifiLink::WifiLink(const char *ssid, const char *password,
     _scanned(false) {
   strncpy(_text, "hors ligne", sizeof(_text) - 1);
   _text[sizeof(_text) - 1] = '\0';
+  strncpy(_ipText, "0.0.0.0", sizeof(_ipText) - 1);
+  _ipText[sizeof(_ipText) - 1] = '\0';
 }
 
 void WifiLink::begin() {
@@ -128,19 +130,17 @@ void WifiLink::update() {
 }
 
 void WifiLink::refreshText() {
+  const char *label;
   switch (_state) {
     case LinkState::Up:
-      WiFi.localIP().toString().toCharArray(_text, sizeof(_text));
+      label = "connecte";
+      WiFi.localIP().toString().toCharArray(_ipText, sizeof(_ipText));
       break;
-    case LinkState::Connecting:
-      strncpy(_text, "connexion...", sizeof(_text) - 1);
-      _text[sizeof(_text) - 1] = '\0';
-      break;
-    default:
-      strncpy(_text, "hors ligne", sizeof(_text) - 1);
-      _text[sizeof(_text) - 1] = '\0';
-      break;
+    case LinkState::Connecting: label = "connexion..."; break;
+    default:                    label = "hors ligne";  break;
   }
+  strncpy(_text, label, sizeof(_text) - 1);
+  _text[sizeof(_text) - 1] = '\0';
 }
 
 int32_t WifiLink::rssi() const {

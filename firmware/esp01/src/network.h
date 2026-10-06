@@ -19,7 +19,10 @@ public:
 
   LinkState   state() const { return _state; }
   bool        isConnected() const { return _state == LinkState::Up; }
+  // Libelle d'etat, sans adresse : destine a l'affichage.
   const char *statusText() const { return _text; }
+  // Adresse IP, reservee au journal serie.
+  const char *ipText() const { return _ipText; }
   uint16_t    attempts() const { return _attempts; }
   int32_t     rssi() const;
 
@@ -41,7 +44,8 @@ private:
   uint32_t  _lastReport;
   uint16_t  _attempts;
   bool      _scanned;
-  char      _text[20];
+  char      _text[16];
+  char      _ipText[16];
 
   static const uint32_t ATTEMPT_TIMEOUT_MS = 12000;
   static const uint32_t RETRY_DELAY_MS     = 3000;
