@@ -1,0 +1,5 @@
+opencv-python>=4.10
+numpy
+requests
+ultralytics>=8.3
+flask>=3.0
