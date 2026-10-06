@@ -1,7 +1,10 @@
 <header>
-  <h1>Sentinel-X</h1>
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <h1>Sentinel-X Dashboard</h1>
+  </div>
+
   <div class="header-actions">
-    <span class="badge" [class.ok]="apiUp()">API {{ apiUp() ? 'connectée' : 'injoignable' }}</span>
     <button class="secondary" (click)="logout()">Déconnexion</button>
   </div>
 </header>
@@ -9,12 +12,29 @@
 <main>
   <section class="card status">
     <h2>Statut du boîtier</h2>
-    <p>
-      <span class="dot" [class.ok]="online()"></span>
-      {{ online() ? 'En ligne' : 'Hors ligne' }}
-    </p>
-    <p>Présence (PIR) : <strong>{{ last()?.motion ? 'Détectée' : 'Aucune' }}</strong></p>
-    <p>Dernière mesure : {{ last() ? (last()!.ts | date: 'HH:mm:ss') : '–' }}</p>
+    <ul class="rows">
+      <li>
+        <span class="dot" [class.ok]="online()"></span>
+        <div>
+          <strong>Boîtier</strong>
+          <small [class.on]="online()">{{ online() ? 'En ligne' : 'Hors ligne' }}</small>
+        </div>
+      </li>
+      <li>
+        <span class="dot" [class.on]="last()?.motion"></span>
+        <div>
+          <strong>Présence (PIR)</strong>
+          <small [class.on]="last()?.motion">{{ last()?.motion ? 'Détectée' : 'Aucune' }}</small>
+        </div>
+      </li>
+      <li>
+        <span class="dot idle"></span>
+        <div>
+          <strong>Dernière mesure</strong>
+          <small>{{ last() ? (last()!.ts | date: 'HH:mm:ss') : '–' }}</small>
+        </div>
+      </li>
+    </ul>
 
     <h2>Dernières alertes</h2>
     @for (a of recentAlerts(); track a.id) {
@@ -31,8 +51,9 @@
       <app-faces-manager />
     }
   </section>
-
-  <section class="card"><app-line-chart label="Température" unit="°C" color="#ff6b4a" [values]="temperature()" /></section>
-  <section class="card"><app-line-chart label="Humidité" unit="%" color="#4f8cff" [values]="humidity()" /></section>
-  <section class="card"><app-line-chart label="Gaz (MQ-2)" color="#f5b301" [values]="gas()" /></section>
+  <div class="environment-infos">
+    <section class="card"><app-line-chart label="Température" unit="°C" color="#a8559f" [values]="temperature()" /></section>
+    <section class="card"><app-line-chart label="Humidité" unit="%" color="#9fcfdf" [values]="humidity()" /></section>
+    <section class="card"><app-line-chart label="Gaz (MQ-2)" color="#4f9d86" [values]="gas()" /></section>
+  </div>
 </main>
