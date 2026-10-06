@@ -2,7 +2,6 @@ name: sentinel-x
 
 services:
 
-  # Entré réseau / routage / TLS
   traefik:
     image: traefik:v3.3
     container_name: sentinel-traefik
@@ -11,10 +10,8 @@ services:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=sentinel-edge
-      # Activation stricte des ports sécurisés
       - --entrypoints.websecure.address=:443
       - --entrypoints.mqtts.address=:8883
-      # Lecture de la configuration TLS
       - --providers.file.directory=/etc/traefik/dynamic
       - --providers.file.watch=true
     ports:
@@ -27,7 +24,6 @@ services:
     networks:
       - edge
 
-  # Bus de messages capteurs
   mosquitto:
     image: eclipse-mosquitto:2
     container_name: sentinel-mosquitto
@@ -37,7 +33,7 @@ services:
       - mosquitto-data:/mosquitto/data
       - mosquitto-logs:/mosquitto/log
     networks:
-      - edge  # nécessaire pour exposition MQTT aux ESP32
+      - edge
       - internal
     labels:
       - traefik.enable=true
@@ -46,18 +42,23 @@ services:
       - traefik.tcp.routers.mqtt.tls=true
       - traefik.tcp.services.mqtt.loadbalancer.server.port=1883
 
-  database: #TODO sécurisé l'accès (lecture/ecriture) via mot de passe en .env
+  database:
     image: postgres:16-alpine
     container_name: sentinel-database
     restart: unless-stopped
     environment:
-      # Sécurisation via le fichier .env
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: sentinel_events
+      # Utilisation des noms de variables de ton collègue pour correspondre à son .env
+      POSTGRES_USER: ${POSTGRES_USER:-sentinel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans le .env racine}
+      POSTGRES_DB: ${POSTGRES_DB:-sentinel_events}
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d$${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - internal
 
@@ -66,15 +67,22 @@ services:
       context: ./backend
     container_name: sentinel-backend
     restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-sentinel}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-sentinel_events}
+      CORS_ORIGINS: https://sentinel.localhost,https://localhost
+      TRUST_PROXY: "1"
     depends_on:
-      - database
-      - mosquitto
+      database:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
     networks:
       - edge
       - internal
     labels:
       - traefik.enable=true
-      - traefik.http.routers.backend.rule=Host(`sentinel.localhost`) && PathPrefix(`/api`)
+      - traefik.http.routers.backend.rule=PathPrefix(`/api`) || PathPrefix(`/socket.io`)
       - traefik.http.routers.backend.entrypoints=websecure
       - traefik.http.routers.backend.tls=true
       - traefik.http.services.backend.loadbalancer.server.port=3000
@@ -90,12 +98,11 @@ services:
       - edge
     labels:
       - traefik.enable=true
-      - traefik.http.routers.frontend.rule=Host(`sentinel.localhost`)
+      - traefik.http.routers.frontend.rule=PathPrefix(`/`)
       - traefik.http.routers.frontend.entrypoints=websecure
       - traefik.http.routers.frontend.tls=true
       - traefik.http.services.frontend.loadbalancer.server.port=80
 
-  # flux caméra : émission événements + actions caméra/algo
   ia-vision:
     build:
       context: ./ia-vision
@@ -106,10 +113,8 @@ services:
     networks:
       - internal
     devices: 
-      - "/dev/video0:/dev/video0" # pour la caméra locale sur macOs
-    #TODO: réfléchir si on veut un volume pour stocker les images ?
+      - "/dev/video0:/dev/video0"
 
-  # données capteurs -> événements
   predict-anomalie:
     build:
       context: ./predict-anomalie
@@ -120,12 +125,11 @@ services:
       - database
     networks:
       - internal
-    #TODO: on veut un volume pour stocker le modèle entrainé ?
 
 networks:
-  edge: # Attention exposé via traefik du coup
+  edge:
     name: sentinel-edge
-  internal: # Normalement non accessible depuis l'extérieur
+  internal:
     name: sentinel-internal
     internal: true
 
@@ -133,4 +137,3 @@ volumes:
   db-data:
   mosquitto-data:
   mosquitto-logs:
-  # traefik-certs:
