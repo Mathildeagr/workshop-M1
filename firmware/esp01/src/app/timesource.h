@@ -6,6 +6,8 @@ class ITimeSource {
 public:
   virtual ~ITimeSource() {}
 
+  virtual void begin() {}
+
   // false : la valeur rendue est une duree depuis le demarrage.
   virtual bool hasWallClock() const = 0;
 

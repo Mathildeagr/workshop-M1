@@ -8,6 +8,7 @@
 #include "actuators/led.h"
 #include "actuators/screen.h"
 #include "app/timesource.h"
+#include "app/ntp_clock.h"
 #include "app/telemetry.h"
 #include "app/serial_sink.h"
 #include "net/mqtt_client.h"
@@ -40,7 +41,7 @@ static WifiLink     link(WIFI_SSID, WIFI_PASSWORD,
                         IPAddress(NET_SUBNET),    IPAddress(NET_DNS));
 static StatusLed    statusLed(PIN_LED_RED, PIN_LED_GREEN);
 static StatusScreen screen(0x3C);
-static UptimeClock  uptimeClock;
+static NtpClock     wallClockDevice(NTP_SERVER, NTP_TIMEZONE);
 static SerialSink    serialSink;
 static MqttClient    mqtt(link, MQTT_HOST, MQTT_PORT, DEVICE_ID,
                           MQTT_USER, MQTT_PASSWORD);
@@ -51,7 +52,7 @@ static IGasSensor      &gas       = mq2Device;
 static IPresenceSensor &presence  = pirDevice;
 static ITamperSensor   &tilt      = tiltDevice;
 static ITamperSensor   &optic     = opticDevice;
-static ITimeSource     &wallClock = uptimeClock;
+static ITimeSource     &wallClock = wallClockDevice;
 static ITelemetrySink  &telemetry = sinks;
 
 static AlertPolicy   policy(statusLed, telemetry);
@@ -62,6 +63,7 @@ static ScreenData     screenData;
 static uint32_t       lastTelemetry = 0;
 static LinkState      lastLinkState = LinkState::Down;
 static bool           bootReported  = false;
+static bool           clockReported = false;
 static bool           climateFaultReported = false;
 static bool           gasFaultReported     = false;
 
@@ -180,6 +182,15 @@ static void publishTelemetry() {
   telemetry.publish(frame);
 }
 
+static void announceClock() {
+  if (clockReported || !wallClock.hasWallClock()) return;
+  clockReported = true;
+
+  uint8_t hh, mm, ss;
+  wallClock.hms(hh, mm, ss);
+  Serial.printf("heure synchronisee : %02u:%02u:%02u\n", hh, mm, ss);
+}
+
 static void refreshScreen() {
   wallClock.hms(screenData.hh, screenData.mm, screenData.ss);
   screenData.wall_clock   = wallClock.hasWallClock();
@@ -199,6 +210,7 @@ void setup() {
   tilt.begin();
   optic.begin();
   mqtt.setCommandSink(&commands);
+  wallClock.begin();
   telemetry.begin();
   policy.begin();
   link.begin();
@@ -251,6 +263,7 @@ void loop() {
   readClimate();
   readGas();
 
+  announceClock();
   refreshScreen();
   publishTelemetry();
   telemetry.update();

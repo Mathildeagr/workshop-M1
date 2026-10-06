@@ -20,3 +20,8 @@
 #define MQTT_PORT      1883
 #define MQTT_USER      "esp01"
 #define MQTT_PASSWORD  "a-renseigner"
+
+// Serveur de temps. Sur un reseau de table isole, pool.ntp.org est injoignable :
+// viser le PC serveur ou la passerelle, qui doivent alors servir le NTP.
+#define NTP_SERVER    "192.168.10.10"
+#define NTP_TIMEZONE  "CET-1CEST,M3.5.0,M10.5.0/3"
