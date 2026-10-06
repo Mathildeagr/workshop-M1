@@ -68,3 +68,6 @@ desktop.ini
 logs/
 tmp/
 *.tmp
+
+# Config locale du publieur caméra (contient des credentials RTSP)
+scripts/publish-camera.env
