@@ -72,6 +72,11 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-sentinel}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-sentinel_events}
       CORS_ORIGINS: https://sentinel.localhost,https://localhost
       TRUST_PROXY: "1"
+      # Service vision : sur l'hôte par défaut, http://ai-vision:5000 avec le profil "vision"
+      VISION_SERVICE_URL: ${VISION_SERVICE_URL:-http://host.docker.internal:5000}
+      VISION_SERVICE_TOKEN: ${VISION_SERVICE_TOKEN:-}
+    extra_hosts:
+      - host.docker.internal:host-gateway   # déjà fourni par Docker Desktop, nécessaire sous Linux
     depends_on:
       database:
         condition: service_healthy

@@ -76,6 +76,21 @@ python enroll.py remove intrus
 
 Les changements dans la base sont pris en compte sans devoir relancer tout le programme.
 
+## Service pour le backend (server.py)
+
+En production, c'est `server.py` qui tourne : il reprend le traitement de `vision.py` et `enroll.py`
+et le backend Node le pilote en HTTP (routes `/api/v1/vision/*` et `/api/v1/faces/*`).
+
+```bash
+python server.py            # vision lancée tout de suite, en permanence
+python server.py --no-autostart
+```
+
+- La vision tourne en continu et est relancée automatiquement si elle s'arrête (caméra débranchée...).
+- Un enrôlement webcam (`POST /api/v1/faces/capture`) met la vision en pause le temps de la capture
+  (30 s max), puis la relance. L'aperçu de la capture passe par le même flux vidéo.
+- `SENTINEL_SERVICE_TOKEN` (`.env`) doit être identique à `VISION_SERVICE_TOKEN` côté backend.
+
 ## Fichiers de configuration
 
 Le cœur des réglages est dans `config.py`.

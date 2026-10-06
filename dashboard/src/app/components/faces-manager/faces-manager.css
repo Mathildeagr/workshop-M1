@@ -1,0 +1,25 @@
+table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px; }
+td { padding: 6px 4px; border-bottom: 1px solid var(--border); }
+
+form { display: grid; gap: 8px; margin-bottom: 16px; }
+label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+
+input,
+select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+button.small { padding: 4px 10px; font-size: 13px; }
+
+.muted { color: var(--muted); }
+.tag.autorise { color: var(--ok); }
+.tag.interdit { color: var(--danger-text); }
+
+.msg { margin: 8px 0 0; font-size: 14px; color: var(--muted); }
+.msg.ok { color: var(--ok); }
+.msg.error { color: var(--danger-text); }

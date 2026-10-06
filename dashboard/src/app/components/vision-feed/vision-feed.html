@@ -1,0 +1,43 @@
+<div class="title">
+  <h2>Caméra Sentinel</h2>
+  @if (status(); as s) {
+    <span class="state" [class.ok]="s.running" [class.warn]="s.enrolling">
+      {{ s.enrolling ? 'Enrôlement en cours' : s.running ? 'Détection active' : s.enabled ? 'Démarrage…' : 'Arrêtée' }}
+    </span>
+  }
+</div>
+
+<div class="viewer">
+  @if (active() && streamUrl(); as url) {
+    <img [src]="url" alt="Flux de la caméra Sentinel" (error)="onStreamError()" />
+  } @else {
+    <p class="placeholder">
+      {{ !status() ? 'Service vision injoignable' : active() ? 'Connexion au flux…' : 'Vision arrêtée' }}
+    </p>
+  }
+</div>
+
+@if (status(); as s) {
+  @if (s.error) {
+    <p class="msg error">{{ s.error }}</p>
+  }
+  @if (s.running) {
+    <p class="msg">
+      {{ s.persons }} personne(s)
+      @for (d of s.detections; track $index) {
+        · <span [class]="'tag ' + d.status">{{ d.name ?? (d.kind === 'face' ? 'inconnu' : 'sans visage') }}</span>
+      }
+    </p>
+  }
+}
+
+@if (canControl() && status()) {
+  <div class="actions">
+    <button [class.secondary]="status()!.enabled" [disabled]="busy()" (click)="toggle()">
+      {{ status()!.enabled ? 'Arrêter la vision' : 'Démarrer la vision' }}
+    </button>
+  </div>
+}
+@if (error()) {
+  <p class="msg error">{{ error() }}</p>
+}

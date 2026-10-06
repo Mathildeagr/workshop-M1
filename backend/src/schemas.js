@@ -30,6 +30,12 @@ const alertSchema = z.object({
 // Visages (service vision) : mêmes règles de nom que côté Python
 const faceNameSchema = z.object({ name: identifier });
 const faceStatusSchema = z.object({ status: z.enum(["autorise", "interdit"]) }).strict();
+// Enrôlement par la webcam (équivalent de "enroll.py add")
+const faceCaptureSchema = z.object({
+    name: identifier,
+    status: z.enum(["autorise", "interdit"]).default("autorise"),
+    samples: z.number().int().min(1).max(30).default(10),
+}).strict();
 
 // Query string : toujours des chaînes, d'où les conversions
 const alertQuerySchema = z.object({
@@ -43,4 +49,5 @@ const idParamSchema = z.object({
 
 module.exports = {
     loginSchema, createUserSchema, alertSchema, alertQuerySchema, idParamSchema, faceNameSchema, faceStatusSchema,
+    faceCaptureSchema,
 };
