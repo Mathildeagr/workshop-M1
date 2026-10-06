@@ -9,7 +9,7 @@
 #include "timesource.h"
 #include "telemetry.h"
 #include "serial_sink.h"
-#include "backend_client.h"
+#include "mqtt_client.h"
 #include "tee_sink.h"
 #include "alert_policy.h"
 
@@ -48,9 +48,9 @@ static StatusLed    statusLed(PIN_LED_RED, PIN_LED_GREEN);
 static StatusScreen screen(0x3C);
 static UptimeClock  uptimeClock;
 static SerialSink    serialSink;
-static BackendClient backendClient(link, BACKEND_HOST, BACKEND_PORT,
-                                   BACKEND_PATH, DEVICE_API_KEY);
-static TeeSink       sinks(serialSink, backendClient);
+static MqttClient    mqtt(link, MQTT_HOST, MQTT_PORT, DEVICE_ID,
+                          MQTT_USER, MQTT_PASSWORD);
+static TeeSink       sinks(serialSink, mqtt);
 
 static IClimateSensor  &climate   = dhtDevice;
 static IGasSensor      &gas       = mq2Device;
@@ -231,6 +231,10 @@ void setup() {
   }
   Serial.println();
 
+  Serial.print(F("broker "));
+  Serial.print(MQTT_HOST);
+  Serial.print(':');
+  Serial.println(MQTT_PORT);
   Serial.print(F("wifi "));
   Serial.print(WIFI_SSID);
   Serial.print(F(", adresse fixe "));

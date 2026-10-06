@@ -24,6 +24,8 @@ public:
               const char *detail = nullptr, float value = NAN);
   void raise(Family f, State s, const char *detail = nullptr, float value = NAN);
 
+  // Le module n'emet aucun evenement de la famille intrusion : ceux-la
+  // viennent de la vision. Presence et secousse relevent du sabotage.
   void onPresence(const PresenceReading &r);
   void onTamper(bool fromTilt, TamperLevel level, uint16_t episodes);
 

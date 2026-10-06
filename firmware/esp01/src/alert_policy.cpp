@@ -53,13 +53,13 @@ void AlertPolicy::raise(Family f, State s, const char *detail, float value) {
   report(f, s, detail, value);
 }
 
-// Le PIR seul ne prouve rien : c'est la vision qui confirmera, donc on ne sort
-// jamais de "a verifier". Rien n'est remonte tant que le capteur n'est pas
-// stabilise.
+// Une presence detectee par le PIR seul ne prouve rien : elle signale une
+// activite autour du boitier, pas une intrusion. Elle ne sort donc jamais de
+// "a verifier". Rien n'est remonte tant que le capteur n'est pas stabilise.
 void AlertPolicy::onPresence(const PresenceReading &r) {
   if (r.settling) return;
-  if (r.rising) report(FAM_INTRUSION, ST_SUSPECTED, "pir", (float)r.motions_in_window);
-  else          report(FAM_INTRUSION, ST_CLEARED, "pir");
+  if (r.rising) report(FAM_TAMPER, ST_SUSPECTED, "pir", (float)r.motions_in_window);
+  else          report(FAM_TAMPER, ST_CLEARED, "pir");
 }
 
 // Une secousse peut etre un coup sur la table, un deplacement maintenu non.

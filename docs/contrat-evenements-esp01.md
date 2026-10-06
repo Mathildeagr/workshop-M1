@@ -1,34 +1,47 @@
-# Contrat d'événements — nœud `esp01` → backend
+# Contrat d'événements — nœud `esp01`
 
-Document de référence pour l'équipe backend. Le firmware est écrit contre ce
-contrat ; toute modification doit être décidée des deux côtés.
+Document de référence pour les équipes backend et infra. Le firmware est écrit
+contre ce contrat ; toute modification se décide des deux côtés.
 
 ---
 
 ## 1. Transport
 
+Le nœud **ne parle pas au backend**. Il publie sur Mosquitto ; le backend est
+abonné et relaie vers sa propre route REST.
+
 ```
-POST http://<backend>:3000/api/firmware/events
-Content-Type: application/json
-X-API-Key: <clé de l'appareil>
+esp01  ──MQTT──>  Mosquitto  ──>  backend  ──>  POST /api/v1/alerts  ──>  base
 ```
 
-**L'identité de l'appareil n'est pas dans le corps.** Elle est déduite de la
-clé, côté serveur, via la table `DEVICE_API_KEYS` (`esp01:<clé>`). Un nœud ne
-peut donc pas se faire passer pour un autre en modifiant sa charge utile.
+Le nœud ne connaît donc ni l'adresse du backend ni son contrat HTTP. Un
+changement de port ou de route côté API ne demande aucun reflashage.
 
-### Réponses attendues
+### Topics
 
-| Code | Signification | Comportement du firmware |
-|---|---|---|
-| `201` | événement enregistré | retiré de la file |
-| `200` | accepté | retiré de la file |
-| `4xx` | trame refusée | **abandonné**, rejouer ne changerait rien |
-| `5xx`, timeout, hors ligne | serveur indisponible | **conservé**, rejoué plus tard |
+| Topic | Sens | Rétention | Contenu |
+|---|---|---|---|
+| `sentinel/esp01/events` | publication | non | événements, §3 |
+| `sentinel/esp01/telemetry` | publication | non | mesures, §4 |
+| `sentinel/esp01/status` | publication | **oui** | `online` / `offline` |
+| `sentinel/esp01/command` | abonnement | — | commandes descendantes, à définir |
+
+Le client MQTT s'identifie avec le `client-id` `esp01`.
+
+### Le topic `status` et le testament
+
+La connexion déclare un **testament** (*last will*) : si le nœud disparaît sans
+se déconnecter proprement, le broker publie `offline` à sa place, en retenu.
+
+C'est ce qui permet au dashboard de signaler un **module arraché** — un
+événement que le module lui-même ne peut évidemment pas annoncer. Sans ce
+mécanisme, un boîtier volé passerait pour un boîtier silencieux.
 
 ---
 
-## 2. Charge utile
+## 2. Format commun
+
+Charge utile JSON, encodage UTF-8.
 
 ```json
 {
@@ -42,113 +55,152 @@ peut donc pas se faire passer pour un autre en modifiant sa charge utile.
 
 | Champ | Type | Obligatoire | Description |
 |---|---|---|---|
-| `event` | chaîne, `[a-z_]`, ≤ 23 car. | oui | identifiant de l'événement, liste en §3 |
+| `event` | chaîne, `[a-z_]`, ≤ 23 car. | oui | identifiant, liste en §3 |
 | `level` | `info` \| `warning` \| `critical` | oui | gravité |
-| `value` | nombre | non | grandeur associée, voir §3 |
+| `value` | nombre | non | grandeur associée |
 | `detail` | chaîne, ≤ 23 car. | non | capteur ou cause à l'origine |
-| `uptime_s` | entier | oui | secondes écoulées depuis le démarrage du nœud |
+| `uptime_s` | entier | oui | secondes depuis le démarrage du nœud |
+
+L'identité de l'émetteur vient du **topic**, pas du corps : un nœud ne peut pas
+se faire passer pour un autre en modifiant sa trame.
 
 ### Pourquoi `uptime_s`
 
 Le nœud n'a **pas d'horloge** : sans Wi-Fi il n'y a pas de NTP, et il n'embarque
 pas de pile de sauvegarde. Il ne peut donc pas dater ses événements.
 
-Le backend doit horodater à la réception. `uptime_s` lui sert à deux choses :
-détecter un redémarrage du nœud (la valeur repart à zéro), et replacer dans le
-bon ordre les événements qui arrivent **en différé** après une coupure réseau
-(voir §4). Un événement avec `uptime_s = 412` reçu alors que le dernier connu
-était à `600` est un événement ancien, pas un nouveau.
+Le backend horodate à la réception. `uptime_s` lui sert à détecter un
+redémarrage du nœud — la valeur repart à zéro — et à replacer dans l'ordre les
+événements arrivés **en différé** après une coupure réseau (voir §5).
+
+### Correspondance vers `/api/v1/alerts`
+
+| Champ MQTT | Champ API | Remarque |
+|---|---|---|
+| topic | `source` | déduit côté backend, ou via la clé d'appareil |
+| `event` | `type` | identique |
+| `level` | `level` | identique |
+| `value` | `value` | identique |
+| `detail`, `uptime_s` | — | le schéma actuel est `.strict()` et les rejetterait |
+
+À trancher : soit le backend assouplit son schéma pour conserver `detail` et
+`uptime_s`, soit il les absorbe à l'ingestion sans les stocker.
 
 ---
 
-## 3. Liste des événements émis
+## 3. Événements émis
 
-### Intrusion — détecteur de présence
+### Sabotage
 
-| `event` | `level` | `value` | `detail` | Quand |
-|---|---|---|---|---|
-| `intrusion_suspected` | `info` | détections sur 5 min | `pir` | mouvement détecté |
-| `intrusion_cleared` | `info` | — | `pir` | plus de mouvement |
-
-Le PIR ne sort **jamais** de l'état « à vérifier » : seul, il ne prouve rien, et
-les faux positifs sont fréquents. C'est la vision par caméra qui confirmera.
-
-### Sabotage — inclinaison et masquage de l'objectif
+Toute activité détectée autour du boîtier relève de cette famille.
 
 | `event` | `level` | `value` | `detail` | Quand |
 |---|---|---|---|---|
-| `tamper_suspected` | `info` | épisodes sur 5 min | `inclinaison` | secousse brève |
-| `tamper_removed` | `critical` | épisodes sur 5 min | `inclinaison` | position changée et maintenue |
-| `tamper_opened` | `warning` | épisodes sur 5 min | `objectif` | objectif masqué |
-| `tamper_cleared` | `info` | épisodes sur 5 min | `inclinaison` \| `objectif` | retour au repos |
+| `tamper_suspected` | `info` | détections sur 5 min | `pir` | mouvement détecté à proximité |
+| `tamper_suspected` | `info` | épisodes sur 5 min | `inclinaison` | secousse brève du boîtier |
+| `tamper_removed` | `critical` | épisodes sur 5 min | `inclinaison` | position changée **et maintenue** |
+| `tamper_opened` | `warning` | épisodes sur 5 min | `objectif` | objectif de la caméra masqué |
+| `tamper_cleared` | `info` | compteur | `pir` \| `inclinaison` \| `objectif` | retour au repos |
+
+Le champ `detail` est **le seul moyen de savoir quel capteur a parlé** : trois
+sources alimentent les mêmes noms d'événement.
 
 ### État du nœud
 
 | `event` | `level` | `detail` | Quand |
 |---|---|---|---|
-| `node_boot` | `info` | — | premier raccordement réseau après démarrage |
+| `node_boot` | `info` | — | premier raccordement au broker après démarrage |
 | `sensor_fault` | `warning` | `dht22` \| `mq2` | 3 lectures en échec d'affilée |
 | `sensor_recovered` | `info` | `dht22` \| `mq2` | le capteur répond à nouveau |
 
-`node_boot` ne peut pas être émis avant que le réseau soit disponible : il
-arrive donc quelques secondes après la mise sous tension réelle.
+---
+
+## 4. Mesures
+
+Publiées sur `sentinel/esp01/telemetry` **toutes les 2 secondes**. C'est le flux
+dont le modèle de maintenance prédictive a besoin pour apprendre.
+
+```json
+{
+  "uptime_s": 412,
+  "temperature_c": 22.4,
+  "humidity_pct": 54.1,
+  "dew_point_c": 12.6,
+  "gas_raw": 184,
+  "gas_warming": false,
+  "gas_ratio": 1.021,
+  "presence": true,
+  "presence_count": 3,
+  "tilt": "repos",
+  "optic": "repos"
+}
+```
+
+Les champs d'un capteur en panne sont **absents** plutôt que nuls ou à zéro :
+une valeur manquante se distingue ainsi d'une mesure valide qui vaut zéro.
+
+À retenir pour l'équipe IA :
+
+- `gas_warming` à `true` signale que le MQ-2 chauffe encore. **Ces mesures sont
+  à exclure de l'apprentissage** : pendant une vingtaine de minutes après la
+  mise sous tension, la valeur monte fortement puis redescend, sans rapport avec
+  l'air ambiant.
+- `gas_ratio` est l'écart à la ligne de base relevée en air sain. C'est une
+  grandeur relative, bien plus exploitable que la valeur brute, qui dépend du
+  capteur et de son vieillissement.
+- `dew_point_c` est calculé à partir de la température et de l'humidité. Il
+  combine les deux en une grandeur physique décorrélée, utile à un détecteur
+  d'anomalies.
+- `presence_count` et `tilt` transforment des capteurs binaires en séries
+  continues, exploitables là où un simple booléen ne l'est pas.
 
 ---
 
-## 4. Ce que le firmware n'émet pas
-
-Important pour éviter les doublons et les malentendus de périmètre.
+## 5. Ce que le firmware n'émet pas
 
 | Événement | Émetteur |
 |---|---|
-| `intrusion_unknown`, `intrusion_prohibited` | script de vision, sur le PC serveur |
+| `intrusion_suspected`, `intrusion_unknown`, `intrusion_prohibited` | script de vision, sur le PC serveur |
 | `env_drift`, `env_anomaly`, `env_critical` | modèle de maintenance prédictive, sur le PC serveur |
 
-Le nœud **ne décide jamais** d'une anomalie environnementale. Il remonte des
-mesures brutes ; c'est le modèle qui tranche. Le sujet interdit explicitement
-les seuils statiques embarqués, et cette séparation en est la conséquence.
+**Aucun événement de la famille `intrusion` ne vient du nœud.** Son détecteur de
+présence ne sait pas distinguer une personne d'une source de chaleur, et une
+intrusion n'est établie que par la caméra. Ce que le PIR constate est une
+activité autour du boîtier, remontée en `tamper_suspected`.
 
-### Les mesures n'ont pas encore de destination
-
-Le firmware produit en continu température, humidité, valeur du MQ-2, fréquence
-de détections. Ces séries sont ce dont le modèle prédictif a besoin pour
-apprendre, et **aucun endpoint ne les reçoit aujourd'hui**. À trancher avec
-l'équipe backend : un `POST /api/firmware/telemetry` cadencé à 2 s, ou une
-publication MQTT. Tant que ce point n'est pas réglé, l'équipe IA n'a pas de jeu
-de données.
+De même, le nœud **ne décide jamais** d'une anomalie environnementale. Il publie
+des mesures brutes ; c'est le modèle qui tranche. Le sujet interdit les seuils
+statiques embarqués, et cette séparation en est la conséquence directe.
 
 ---
 
-## 5. Comportement du firmware
+## 6. Comportement du firmware
 
-**Aucun événement n'est perdu sur coupure réseau.** Les événements émis hors
-ligne sont gardés dans une file de 8 entrées et rejoués dès le retour du lien,
-un par 500 ms. File pleine, le plus ancien est sacrifié : les événements récents
-décrivent mieux la situation courante.
+**Aucun événement n'est perdu sur coupure.** Les événements émis alors que le
+broker est injoignable sont gardés dans une file de 8 entrées et rejoués dès la
+reconnexion, un toutes les 200 ms. File pleine, le plus ancien est sacrifié.
+
+**Les mesures ne sont pas mises en file.** Une valeur climatique vieille de dix
+minutes n'intéresse personne, et la suivante arrive dans deux secondes.
 
 **Les événements sont rares.** Ils ne sont émis que sur **changement d'état**,
-jamais en continu. Un mouvement qui dure dix minutes produit deux événements,
-pas six cents.
+jamais en continu. Une présence qui dure dix minutes produit deux événements.
 
-**Le nœud ne déclenche plus ses alarmes lui-même.** Capteurs et actionneurs sont
-découplés : le firmware rapporte, le backend décide. C'est lui qui commandera le
-buzzer et la LED, puisque lui seul voit les trois nœuds à la fois — un mouvement
-détecté par le PIR et confirmé par la caméra n'a pas la même gravité qu'un
-mouvement seul.
-
-Le canal de commande descendant reste à définir.
+**Le nœud ne déclenche plus ses alarmes lui-même.** Il rapporte, le backend
+décide — lui seul voit les trois nœuds à la fois, et un mouvement confirmé par
+la caméra n'a pas la même gravité qu'un mouvement seul. Le buzzer et la LED
+attendent les commandes sur `sentinel/esp01/command`.
 
 ---
 
-## 6. Points à trancher avec l'équipe backend
+## 7. Points à trancher
 
-1. **L'adresse.** Le sujet impose `POST /api/v1/alerts`, et cette route existe
-   déjà côté backend, avec un schéma strict `{ type, level, value }`. Le présent
-   contrat utilise `/api/firmware/events` avec une trame plus riche. Choisir :
-   soit le backend expose les deux, soit on s'aligne sur la route du sujet et on
-   perd `detail` et `uptime_s`.
-2. **Le canal descendant** pour commander buzzer et LED : REST en scrutation,
-   WebSocket, ou MQTT.
-3. **La destination des mesures**, voir §4.
-4. **Le passage en HTTPS/MQTTS**, exigé par le sujet pour jeudi. Côté nœud, cela
-   représente 16 à 25 Ko de RAM supplémentaires ; la marge actuelle le permet.
+1. **Le format des commandes descendantes** sur `sentinel/esp01/command`. Le
+   firmware attend un nom de famille et un état, pas des durées : les séquences
+   sonores et lumineuses restent embarquées, pour qu'une modification de rythme
+   ne demande pas un déploiement backend.
+2. **La conservation de `detail` et `uptime_s`** côté API, voir §2.
+3. **Le passage en MQTTS**, exigé par le sujet pour jeudi : certificat du broker,
+   et 16 à 25 Ko de RAM supplémentaires côté nœud. La marge actuelle le permet.
+4. **L'authentification du broker** : identifiants par nœud, ou accès ouvert sur
+   le réseau de table isolé.
