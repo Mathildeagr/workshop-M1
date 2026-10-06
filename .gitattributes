@@ -1,0 +1,3 @@
+# Fichiers lus dans des conteneurs Linux : toujours en LF, même sous Windows
+mosquitto/config/* text eol=lf
+*.sh text eol=lf
