@@ -1,0 +1,4 @@
+tls:
+  certificates:
+    - certFile: "/etc/certs/sentinel.crt"
+      keyFile: "/etc/certs/sentinel.key"
