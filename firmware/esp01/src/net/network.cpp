@@ -1,4 +1,4 @@
-#include "network.h"
+#include "net/network.h"
 #include <ESP8266WiFi.h>
 
 static const char *statusName(int s) {

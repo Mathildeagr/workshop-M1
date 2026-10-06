@@ -1,4 +1,4 @@
-#include "alarm.h"
+#include "actuators/alarm.h"
 
 // Tables issues de la console de reglage. freq 0 = silence. Le dernier silence
 // d'une table est l'ecart entre deux cycles, joue par le rebouclage.

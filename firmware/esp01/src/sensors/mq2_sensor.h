@@ -1,6 +1,6 @@
 #pragma once
 
-#include "gas.h"
+#include "sensors/gas.h"
 
 class Mq2Sensor : public IGasSensor {
 public:

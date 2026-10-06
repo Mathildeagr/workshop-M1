@@ -1,5 +1,5 @@
-#include "jingles.h"
-#include "alarm.h"
+#include "actuators/jingles.h"
+#include "actuators/alarm.h"
 
 // Tout reste entre 450 Hz et 2 kHz : la bande ou une pastille piezo rend.
 

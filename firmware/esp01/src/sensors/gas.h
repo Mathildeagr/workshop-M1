@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include "sensor_status.h"
+#include "sensors/sensor_status.h"
 
 struct GasReading {
   uint16_t raw;

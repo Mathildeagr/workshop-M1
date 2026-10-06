@@ -1,4 +1,4 @@
-#include "dht22_sensor.h"
+#include "sensors/dht22_sensor.h"
 #include <math.h>
 
 Dht22Sensor::Dht22Sensor(uint8_t pin, uint32_t minIntervalMs, uint32_t retryMs)

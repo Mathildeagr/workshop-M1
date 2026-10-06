@@ -1,4 +1,4 @@
-#include "climate.h"
+#include "sensors/climate.h"
 #include <math.h>
 
 float climateDewPointC(float temperature_c, float humidity_pct) {

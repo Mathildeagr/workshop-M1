@@ -1,4 +1,4 @@
-#include "mq2_sensor.h"
+#include "sensors/mq2_sensor.h"
 #include <math.h>
 
 Mq2Sensor::Mq2Sensor(uint8_t pin, uint32_t warmupMs, uint32_t intervalMs)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "presence.h"
+#include "sensors/presence.h"
 
 class PirSensor : public IPresenceSensor {
 public:

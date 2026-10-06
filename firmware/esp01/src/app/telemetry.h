@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Arduino.h>
-#include "alarm.h"
-#include "tamper.h"
+#include "actuators/alarm.h"
+#include "sensors/tamper.h"
 
 // Etat complet du noeud a un instant donne. C'est ce qui partira en JSON sur
 // sentinel/esp01/telemetry.

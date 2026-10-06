@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DHT.h>
-#include "climate.h"
+#include "sensors/climate.h"
 
 class Dht22Sensor : public IClimateSensor {
 public:

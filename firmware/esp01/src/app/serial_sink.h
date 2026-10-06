@@ -1,6 +1,6 @@
 #pragma once
 
-#include "telemetry.h"
+#include "app/telemetry.h"
 
 // Sortie de secours tant que MQTT n'est pas en place. Remplacable par un
 // MqttSink sans toucher au reste du firmware.

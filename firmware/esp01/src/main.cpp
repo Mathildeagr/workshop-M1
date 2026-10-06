@@ -1,36 +1,29 @@
 #include <Arduino.h>
 
-#include "secrets.h"
-#include "network.h"
-#include "alarm.h"
-#include "jingles.h"
-#include "led.h"
-#include "screen.h"
-#include "timesource.h"
-#include "telemetry.h"
-#include "serial_sink.h"
-#include "mqtt_client.h"
-#include "tee_sink.h"
-#include "command_router.h"
-#include "alert_policy.h"
+#include "config/pins.h"
+#include "config/secrets.h"
+#include "net/network.h"
+#include "actuators/alarm.h"
+#include "actuators/jingles.h"
+#include "actuators/led.h"
+#include "actuators/screen.h"
+#include "app/timesource.h"
+#include "app/telemetry.h"
+#include "app/serial_sink.h"
+#include "net/mqtt_client.h"
+#include "app/tee_sink.h"
+#include "app/command_router.h"
+#include "app/alert_policy.h"
 
-#include "climate.h"
-#include "dht22_sensor.h"
-#include "gas.h"
-#include "mq2_sensor.h"
-#include "presence.h"
-#include "pir_sensor.h"
-#include "tamper.h"
-#include "contact_sensor.h"
+#include "sensors/climate.h"
+#include "sensors/dht22_sensor.h"
+#include "sensors/gas.h"
+#include "sensors/mq2_sensor.h"
+#include "sensors/presence.h"
+#include "sensors/pir_sensor.h"
+#include "sensors/tamper.h"
+#include "sensors/contact_sensor.h"
 
-#define PIN_BUZZER    D8   // GPIO15 : tirage externe bas, donc muet au boot
-#define PIN_DHT       D5
-#define PIN_PIR       D6
-#define PIN_MQ2       A0
-#define PIN_TILT      D3   // GPIO0 : contact OUVERT au repos, sinon pas de boot
-#define PIN_OPTIC     D0   // GPIO16 : tirage externe 10k vers 3V
-#define PIN_LED_RED   D7
-#define PIN_LED_GREEN D4
 
 static const uint32_t TELEMETRY_PERIOD_MS   = 2000;
 static const uint8_t  SENSOR_FAIL_THRESHOLD = 3;

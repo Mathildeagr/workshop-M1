@@ -1,4 +1,4 @@
-#include "contact_sensor.h"
+#include "sensors/contact_sensor.h"
 
 const char *tamperLevelName(TamperLevel l) {
   switch (l) {

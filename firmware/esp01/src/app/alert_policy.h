@@ -1,10 +1,10 @@
 #pragma once
 
-#include "alarm.h"
-#include "led.h"
-#include "presence.h"
-#include "tamper.h"
-#include "telemetry.h"
+#include "actuators/alarm.h"
+#include "actuators/led.h"
+#include "sensors/presence.h"
+#include "sensors/tamper.h"
+#include "app/telemetry.h"
 
 // Deux responsabilites distinctes :
 //   report() transmet un evenement sans rien declencher localement,

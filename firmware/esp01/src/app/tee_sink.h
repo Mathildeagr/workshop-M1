@@ -1,6 +1,6 @@
 #pragma once
 
-#include "telemetry.h"
+#include "app/telemetry.h"
 
 // Diffuse vers deux puits : le journal serie reste disponible quand le backend
 // est injoignable.

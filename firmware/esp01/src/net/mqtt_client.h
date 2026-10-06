@@ -2,9 +2,9 @@
 
 #include <PubSubClient.h>
 #include <WiFiClient.h>
-#include "command.h"
-#include "network.h"
-#include "telemetry.h"
+#include "net/command.h"
+#include "net/network.h"
+#include "app/telemetry.h"
 
 // Publie evenements et mesures sur Mosquitto. Le backend est abonne : le noeud
 // ne connait pas son adresse et n'a pas a la connaitre.

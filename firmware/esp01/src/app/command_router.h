@@ -1,7 +1,7 @@
 #pragma once
 
-#include "alert_policy.h"
-#include "command.h"
+#include "app/alert_policy.h"
+#include "net/command.h"
 
 // Traduit les messages recus sur le topic de commande en actions locales.
 // Une commande inconnue est ignoree sans bruit : le topic peut porter des

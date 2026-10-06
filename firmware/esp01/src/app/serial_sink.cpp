@@ -1,4 +1,4 @@
-#include "serial_sink.h"
+#include "app/serial_sink.h"
 #include <math.h>
 
 void SerialSink::stamp(uint32_t uptime_s) {

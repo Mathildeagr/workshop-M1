@@ -1,4 +1,4 @@
-#include "pir_sensor.h"
+#include "sensors/pir_sensor.h"
 
 PirSensor::PirSensor(uint8_t pin, uint32_t settleMs, uint32_t windowMs, uint16_t debounceMs)
   : _pin(pin),

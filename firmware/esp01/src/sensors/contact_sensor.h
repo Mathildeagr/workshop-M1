@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tamper.h"
+#include "sensors/tamper.h"
 
 enum class PinBias : uint8_t {
   None,         // tirage externe
