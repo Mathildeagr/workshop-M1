@@ -47,4 +47,9 @@ module.exports = {
         username: process.env.ADMIN_USERNAME,
         password: process.env.ADMIN_PASSWORD,
     },
+    // Service Python ai-vision/server.py (sur la machine hôte). Optionnel : sans lui, /vision et /faces répondent 503
+    vision: {
+        url: (process.env.VISION_SERVICE_URL || "http://127.0.0.1:5000").replace(/\/$/, ""),
+        token: process.env.VISION_SERVICE_TOKEN || "",
+    },
 };
