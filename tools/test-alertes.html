@@ -1,0 +1,1148 @@
+<title>Console d'alertes Sentinel-X</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  /* Layout : bandeau de contrôle, puis matrice 3 familles x 4 états à gauche,
+     panneau "appareil" (LED + chronogramme) à droite, réglages et export dessous. */
+  :root {
+    --bg: #f3f6f8;
+    --surface: #ffffff;
+    --surface-2: #e8eef2;
+    --fg: #15202a;
+    --fg-dim: #5a6c7a;
+    --line: #d1dae1;
+    --accent: #0e7490;
+    --accent-soft: rgba(14, 116, 144, 0.12);
+    --sig-amber: #b86a06;
+    --sig-red: #bd2a20;
+    --sig-green: #1c7a44;
+    --shadow: 0 1px 2px rgba(21, 32, 42, 0.06), 0 8px 24px rgba(21, 32, 42, 0.05);
+
+    --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0c1318;
+      --surface: #131e26;
+      --surface-2: #1c2a34;
+      --fg: #e5edf3;
+      --fg-dim: #8ca0ae;
+      --line: #263845;
+      --accent: #22d3ee;
+      --accent-soft: rgba(34, 211, 238, 0.14);
+      --sig-amber: #f0a52a;
+      --sig-red: #f2584a;
+      --sig-green: #3ecf7f;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0c1318;
+    --surface: #131e26;
+    --surface-2: #1c2a34;
+    --fg: #e5edf3;
+    --fg-dim: #8ca0ae;
+    --line: #263845;
+    --accent: #22d3ee;
+    --accent-soft: rgba(34, 211, 238, 0.14);
+    --sig-amber: #f0a52a;
+    --sig-red: #f2584a;
+    --sig-green: #3ecf7f;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    font-size: 15px;
+    line-height: 1.5;
+    padding-inline: 16px;
+    padding-block: 28px 56px;
+    margin: 0;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+
+  h1 {
+    font-size: clamp(1.45rem, 3.4vw, 2rem);
+    line-height: 1.15;
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  .sub { color: var(--fg-dim); margin: 6px 0 0; max-width: 62ch; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px;
+  }
+
+  /* --- Bandeau de contrôle --- */
+  .bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 22px;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 18px;
+    box-shadow: var(--shadow);
+  }
+  .seg { display: flex; gap: 2px; background: var(--surface-2); border-radius: 8px; padding: 3px; }
+  .seg button {
+    font: 500 0.82rem/1 var(--font-ui);
+    color: var(--fg-dim);
+    background: none;
+    border: 0;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: var(--shadow); }
+  .seg.mini button { font-size: 0.74rem; padding: 5px 9px; }
+  .field { display: flex; align-items: center; gap: 9px; }
+  .field label { font-size: 0.8rem; color: var(--fg-dim); white-space: nowrap; }
+  input[type="range"] { width: 112px; accent-color: var(--accent); }
+
+  .btn {
+    font: 500 0.85rem/1 var(--font-ui);
+    padding: 9px 15px;
+    border-radius: 7px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn-stop { background: var(--sig-red); border-color: var(--sig-red); color: #fff; }
+  .btn-stop:hover { filter: brightness(1.08); border-color: var(--sig-red); }
+  .btn-accent { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  .btn-accent:hover { filter: brightness(1.08); }
+  .btn-tiny { font: 500 0.72rem/1 var(--font-ui); padding: 5px 9px; border-radius: 6px; }
+
+  :where(button, input, a):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* --- Corps : matrice + appareil --- */
+  .main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+  @media (max-width: 920px) { .main { grid-template-columns: minmax(0, 1fr); } }
+
+  .fam { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+  .fam + .fam { margin-top: 14px; }
+  .fam-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 10px;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .fam-head h2 { font-size: 0.98rem; font-weight: 600; margin: 0; }
+  .fam-head .contour {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--fg-dim);
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 999px;
+    padding: 2px 9px;
+  }
+  .fam-head .motif { font-family: var(--font-mono); font-size: 0.72rem; color: var(--fg-dim); margin-left: auto; }
+
+  .cells { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); }
+  @media (max-width: 700px) { .cells { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  .cell {
+    background: var(--surface);
+    border: 0;
+    border-left: 3px solid transparent;
+    text-align: left;
+    padding: 12px 13px 13px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    font-family: var(--font-ui);
+    color: inherit;
+  }
+  .cell:hover { background: var(--accent-soft); }
+  .cell[aria-pressed="true"] { background: var(--accent-soft); border-left-color: var(--accent); }
+  .cell .state { font-size: 0.82rem; font-weight: 600; }
+  .cell .code { font-family: var(--font-mono); font-size: 0.7rem; color: var(--accent); overflow-wrap: anywhere; }
+  .cell .detail { font-size: 0.73rem; color: var(--fg-dim); line-height: 1.35; }
+  .cell[data-state="suspected"] .state { color: var(--sig-amber); }
+  .cell[data-state="confirmed"] .state,
+  .cell[data-state="escalated"] .state { color: var(--sig-red); }
+  .cell[data-state="cleared"] .state { color: var(--sig-green); }
+
+  /* --- Panneau appareil --- */
+  .device { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; box-shadow: var(--shadow); }
+  .led-row { display: flex; align-items: center; gap: 18px; }
+  .led {
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    transition: background 40ms linear, box-shadow 40ms linear;
+  }
+  .pins { font-family: var(--font-mono); font-size: 0.74rem; color: var(--fg-dim); display: flex; flex-direction: column; gap: 3px; }
+  .pins b { font-weight: 500; color: var(--fg); }
+  .pin-hi { color: var(--sig-green); }
+
+  .readout { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .readout .now { font-family: var(--font-mono); font-size: 0.86rem; font-weight: 500; overflow-wrap: anywhere; }
+  .readout .meta { font-size: 0.77rem; color: var(--fg-dim); margin-top: 4px; }
+
+  .chrono { margin-top: 15px; }
+  .chrono-label {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 7px;
+  }
+  .bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 1px;
+    height: 76px;
+    padding: 8px;
+    background: var(--surface-2);
+    border-radius: 7px;
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .bar-item { min-width: 1px; border-radius: 2px 2px 0 0; background: var(--accent); opacity: 0.32; transition: opacity 60ms linear; }
+  .bar-item.silent { background: var(--line); opacity: 1; height: 2px !important; align-self: flex-end; }
+  .bar-item.on { opacity: 1; }
+
+  /* --- Réglages --- */
+  .tune-grid { display: flex; flex-direction: column; gap: 16px; }
+  .fam-tune { border: 1px solid var(--line); border-radius: 9px; background: var(--bg); padding: 15px; }
+  .fam-tune > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+  .fam-tune h3 { font-size: 0.88rem; font-weight: 600; margin: 0; }
+  .state-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(205px, 1fr)); gap: 16px; margin-top: 12px; }
+  .state-col { min-width: 0; border-top: 2px solid var(--line); padding-top: 10px; }
+  .state-col.suspected { border-top-color: var(--sig-amber); }
+  .state-col.confirmed, .state-col.escalated { border-top-color: var(--sig-red); }
+  .state-col.cleared { border-top-color: var(--sig-green); }
+  .state-col h4 { font-size: 0.79rem; font-weight: 600; margin: 0 0 3px; }
+  .state-col .dur { font-family: var(--font-mono); font-size: 0.68rem; color: var(--fg-dim); display: block; margin-bottom: 9px; }
+  .tune-block { min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 14px; background: var(--bg); }
+  .tune-block h3 { font-size: 0.85rem; font-weight: 600; margin: 0 0 4px; }
+  .tune-block .kind-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 11px; flex-wrap: wrap; }
+  .tune-sep {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    margin: 13px 0 7px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
+  .num { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+  .num label { font-size: 0.78rem; color: var(--fg-dim); }
+  .num input {
+    font: 500 0.8rem/1 var(--font-mono);
+    width: 76px;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--fg);
+    text-align: right;
+  }
+  .note-row { display: grid; grid-template-columns: 1.1rem 1fr 1fr 1.6rem; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .note-row .idx { font-family: var(--font-mono); font-size: 0.7rem; color: var(--fg-dim); }
+  .note-row input {
+    font: 500 0.78rem/1 var(--font-mono);
+    width: 100%;
+    min-width: 0;
+    padding: 6px 7px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--fg);
+    text-align: right;
+  }
+  .note-row button {
+    font: 500 0.9rem/1 var(--font-ui);
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--fg-dim);
+    border-radius: 6px;
+    padding: 5px 0;
+    cursor: pointer;
+  }
+  .note-row button:hover { color: var(--sig-red); border-color: var(--sig-red); }
+  .note-head { display: grid; grid-template-columns: 1.1rem 1fr 1fr 1.6rem; gap: 6px; margin-bottom: 5px; }
+  .note-head span { font-family: var(--font-mono); font-size: 0.66rem; color: var(--fg-dim); text-align: right; }
+  .note-head span:first-child { text-align: left; }
+
+  /* --- Test à l'aveugle --- */
+  .blind-guess { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 13px; }
+  .guess {
+    font: 500 0.78rem/1.3 var(--font-ui);
+    text-align: left;
+    padding: 9px 11px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--surface-2);
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .guess:hover { border-color: var(--accent); }
+  .verdict { margin-top: 13px; font-size: 0.86rem; }
+  .verdict.ok { color: var(--sig-green); }
+  .verdict.ko { color: var(--sig-red); }
+  .score { font-family: var(--font-mono); font-size: 0.78rem; color: var(--fg-dim); }
+
+  /* --- Export --- */
+  pre {
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    line-height: 1.6;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+    overflow-x: auto;
+    margin: 12px 0 0;
+  }
+
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
+  .legend p { margin: 0; font-size: 0.83rem; color: var(--fg-dim); }
+  .legend b { color: var(--fg); font-weight: 600; }
+
+  .note-txt { font-size: 0.8rem; color: var(--fg-dim); margin: 10px 0 0; }
+  .hint { font-family: var(--font-mono); font-size: 0.72rem; color: var(--fg-dim); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .led, .bar-item { transition: none; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">AetherCorp · Sentinel-X · nœud esp01</p>
+    <h1>Console d'alertes</h1>
+    <p class="sub">Les 12 signaux du firmware, synthétisés à l'identique : 3 familles × 4 états, chacun réglé indépendamment.
+      Règle chaque bip à l'oreille, vérifie qu'ils se distinguent, puis exporte les tables C++.</p>
+  </header>
+
+  <div class="bar">
+    <div class="field">
+      <label id="lbl-buzzer">Buzzer</label>
+      <div class="seg" role="group" aria-labelledby="lbl-buzzer">
+        <button id="mode-passive" aria-pressed="true">Passif (multi-tons)</button>
+        <button id="mode-active" aria-pressed="false">Actif (mono-ton)</button>
+      </div>
+    </div>
+    <div class="field">
+      <label for="vol">Volume</label>
+      <input id="vol" type="range" min="0" max="100" value="22">
+    </div>
+    <button id="stop" class="btn btn-stop">Couper l'alarme</button>
+    <span class="hint" id="ctx-hint">Clique un signal pour activer l'audio</span>
+  </div>
+
+  <div class="main">
+
+    <section aria-label="Matrice des signaux">
+      <div id="matrix"></div>
+      <p class="note-txt">Les états <b>À vérifier</b>, <b>Confirmé</b> et <b>Aggravation</b> bouclent jusqu'à
+        « Couper l'alarme ». <b>Levée</b> ne joue qu'une fois, comme sur la carte.</p>
+    </section>
+
+    <div>
+      <section class="device" aria-label="Simulation du nœud">
+        <p class="eyebrow">Sortie physique</p>
+        <div class="led-row">
+          <div class="led" id="led" role="img" aria-label="LED bicolore simulée"></div>
+          <div class="pins">
+            <div>D7 rouge <b id="pin-red">BAS</b></div>
+            <div>D4 verte <b id="pin-green">BAS</b></div>
+            <div>D8 buzzer <b id="pin-buz">BAS</b></div>
+          </div>
+        </div>
+
+        <div class="readout">
+          <div class="now" id="now">— au repos —</div>
+          <div class="meta" id="meta">Aucun signal actif.</div>
+        </div>
+
+        <div class="chrono">
+          <div class="chrono-label">
+            <span id="chrono-unit">Chronogramme d'un cycle</span>
+            <span id="cycle-ms">—</span>
+          </div>
+          <div class="bars" id="bars"></div>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top:14px" aria-label="Test à l'aveugle">
+        <p class="eyebrow">Test à l'aveugle</p>
+        <p class="note-txt" style="margin-top:0">Un signal au hasard, sans indice visuel. C'est la seule vraie
+          preuve que ta grammaire est lisible à l'oreille.</p>
+        <button id="blind-start" class="btn btn-accent" style="margin-top:12px">Jouer un signal mystère</button>
+        <span class="score" id="score" style="margin-left:10px"></span>
+        <div class="blind-guess" id="blind-guess" hidden></div>
+        <div class="verdict" id="verdict" hidden></div>
+      </section>
+    </div>
+  </div>
+
+  <section class="card" aria-label="La grammaire">
+    <p class="eyebrow">La grammaire en deux axes</p>
+    <div class="legend">
+      <p><b>Chaque case a son propre motif.</b> Les 12 signaux sont définis un par un, réglés à l'oreille :
+        aucun n'est déduit d'un autre par calcul. Ce que tu entends ici est exactement ce que le firmware jouera.</p>
+      <p><b>Le rythme dit l'état.</b> Espacé = question. Dense = affirmation. Plus serré encore = ça s'aggrave.
+        Descendant et joué une seule fois = ça se résout.</p>
+      <p><b>La LED ne porte que l'état.</b> Orange = à vérifier, rouge = confirmé, rouge fixe = aggravation,
+        vert = levée. Rouge et verte allumées ensemble donnent l'orange, sur deux broches.</p>
+      <p><b>L'OLED porte le détail.</b> Le son dit la famille et la gravité ; l'écran dit quel capteur a
+        déclenché. N'essaie pas d'encoder un troisième axe dans le buzzer.</p>
+    </div>
+  </section>
+
+  <section class="card" aria-label="Réglages des motifs">
+    <p class="eyebrow">Réglages</p>
+    <p class="note-txt" style="margin:0 0 15px">Un motif indépendant par case. Chaque valeur est appliquée en direct : si un signal joue, il redémarre aussitôt, et l'export C++ se régénère.</p>
+    <div class="tune-grid" id="tune"></div>
+  </section>
+
+  <section class="card" aria-label="Export C++">
+    <p class="eyebrow">Export firmware</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button id="copy" class="btn">Copier les tables C++</button>
+      <span class="hint" id="copy-hint"></span>
+    </div>
+    <pre id="export"></pre>
+  </section>
+
+</div>
+
+<script>
+  "use strict";
+
+  const ACTIVE_FREQ = 2700; // resonance typique d'un buzzer actif 3V
+  const ST_ORDER = ["suspected", "confirmed", "escalated", "cleared"];
+
+  // Un motif independant par case : notes (Hz + ms), ecart entre bips, ecart
+  // entre deux cycles. Valeurs reglees a l'oreille, rien n'est deduit par calcul.
+  // "cleared" n'avait pas ete specifie : proposition descendante, a ajuster.
+  const FAMILIES = {
+    intrusion: {
+      label: "Intrusion humaine", short: "Intrusion", kind: "motif",
+      siren: { freq: 600, cycleMs: 6000, rise: 45, volMin: 8, volMax: 100, updateMs: 25 },
+      states: {
+        suspected: { notes: [{ f: 400, d: 400 }, { f: 400, d: 100 }, { f: 400, d: 200 }], gap: 0, cycleGap: 200 },
+        confirmed: { notes: [{ f: 900, d: 400 }, { f: 400, d: 100 }, { f: 400, d: 200 }], gap: 0, cycleGap: 0 },
+        escalated: { notes: [{ f: 1000, d: 300 }, { f: 1000, d: 75 }, { f: 1000, d: 100 }], gap: 0, cycleGap: 0 },
+        cleared: { notes: [{ f: 900, d: 180 }, { f: 450, d: 360 }], gap: 40, cycleGap: 0 }
+      }
+    },
+    tamper: {
+      label: "Matériel volé ou endommagé", short: "Matériel", kind: "motif",
+      siren: { freq: 1200, cycleMs: 2500, rise: 50, volMin: 10, volMax: 100, updateMs: 25 },
+      states: {
+        suspected: { notes: [{ f: 200, d: 80 }, { f: 1200, d: 80 }, { f: 2000, d: 80 }, { f: 1200, d: 80 }], gap: 2000, cycleGap: 2000 },
+        confirmed: { notes: [{ f: 200, d: 80 }, { f: 1200, d: 80 }, { f: 2000, d: 80 }, { f: 1200, d: 80 }], gap: 80, cycleGap: 80 },
+        escalated: { notes: [{ f: 200, d: 80 }, { f: 1200, d: 80 }, { f: 2000, d: 80 }, { f: 1200, d: 80 }], gap: 50, cycleGap: 50 },
+        cleared: { notes: [{ f: 2000, d: 80 }, { f: 1200, d: 80 }, { f: 200, d: 240 }], gap: 40, cycleGap: 0 }
+      }
+    },
+    env: {
+      label: "Climat et environnement", short: "Climat", kind: "motif",
+      siren: { freq: 650, cycleMs: 5000, rise: 50, volMin: 10, volMax: 100, updateMs: 25 },
+      states: {
+        suspected: { notes: [{ f: 650, d: 300 }, { f: 650, d: 300 }], gap: 1500, cycleGap: 3000 },
+        confirmed: { notes: [{ f: 650, d: 1000 }, { f: 650, d: 1000 }], gap: 500, cycleGap: 2000 },
+        escalated: { notes: [{ f: 650, d: 1000 }, { f: 650, d: 1000 }], gap: 500, cycleGap: 500 },
+        cleared: { notes: [{ f: 650, d: 300 }, { f: 455, d: 600 }], gap: 100, cycleGap: 0 }
+      }
+    }
+  };
+
+  const STATES = {
+    suspected: { label: "À vérifier", sirenRate: 1.6, loop: true, led: "amber", blinkMs: 1000 },
+    confirmed: { label: "Confirmé", sirenRate: 1, loop: true, led: "red", blinkMs: 250 },
+    escalated: { label: "Aggravation", sirenRate: 0.45, loop: true, led: "red", blinkMs: 0 },
+    cleared: { label: "Levée", sirenRate: 0.4, loop: false, led: "green", blinkMs: 0 }
+  };
+
+  const EVENTS = {
+    intrusion: {
+      suspected: ["intrusion_suspected", "PIR seul, la vision ne confirme pas"],
+      confirmed: ["intrusion_unknown", "Vision : humain non reconnu"],
+      escalated: ["intrusion_prohibited", "Visage en liste noire"],
+      cleared: ["intrusion_cleared", "Zone redevenue vide"]
+    },
+    tamper: {
+      suspected: ["tamper_suspected", "Inclinaison maintenue 300 ms"],
+      confirmed: ["tamper_opened", "Boîtier ouvert, ou objectif masqué"],
+      escalated: ["tamper_removed", "Module emporté"],
+      cleared: ["tamper_cleared", "Boîtier refermé"]
+    },
+    env: {
+      suspected: ["env_drift", "Dérive détectée par le modèle"],
+      confirmed: ["env_anomaly", "Anomalie gaz ou thermique confirmée"],
+      escalated: ["env_critical", "Aggravation rapide"],
+      cleared: ["env_cleared", "Retour en zone normale"]
+    }
+  };
+
+  const PRIORITY = ["env_critical", "intrusion_prohibited", "tamper_opened", "intrusion_unknown", "env_drift"];
+
+  let activeBuzzer = false;
+
+  // ---------- Audio ----------
+  let ctx = null, master = null, token = 0, loopTimer = null, raf = null;
+  let current = null;
+  let blind = { on: false, fam: null, st: null, score: { ok: 0, total: 0 } };
+
+  function audio() {
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctx = new AC();
+      master = ctx.createGain();
+      master.gain.value = Number(document.getElementById("vol").value) / 100;
+      master.connect(ctx.destination);
+      document.getElementById("ctx-hint").textContent = "Audio actif";
+    }
+    if (ctx.state === "suspended") ctx.resume();
+    return ctx;
+  }
+
+  function playRun(freq, points, at, durS) {
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.setValueAtTime(freq, at);
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(points[0].v * 0.9, at + 0.003);
+    for (let i = 1; i < points.length; i++) g.gain.setValueAtTime(points[i].v * 0.9, points[i].at);
+    g.gain.setValueAtTime(points[points.length - 1].v * 0.9, at + Math.max(0.005, durS - 0.004));
+    g.gain.linearRampToValueAtTime(0, at + durS);
+    osc.connect(g); g.connect(master);
+    osc.start(at); osc.stop(at + durS + 0.02);
+  }
+
+  function schedule(steps, startAt) {
+    let t = startAt, i = 0;
+    while (i < steps.length) {
+      const s = steps[i];
+      if (s.f === 0) { t += s.d / 1000; i++; continue; }
+      let j = i, dur = 0;
+      const points = [];
+      while (j < steps.length && steps[j].f === s.f) {
+        points.push({ at: t + dur / 1000, v: steps[j].v === undefined ? 1 : steps[j].v });
+        dur += steps[j].d;
+        j++;
+      }
+      playRun(s.f, points, t, dur / 1000);
+      t += dur / 1000;
+      i = j;
+    }
+  }
+
+  function sirenSteps(s, rate, fadeOnly) {
+    const period = Math.max(200, Math.round(s.cycleMs * rate));
+    const upd = Math.max(5, Math.round(s.updateMs));
+    const n = Math.max(2, Math.round(period / upd));
+    const riseN = fadeOnly ? 0 : Math.max(1, Math.round(n * (s.rise / 100)));
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      let p = i < riseN ? i / riseN : 1 - (i - riseN) / Math.max(1, n - riseN - 1);
+      p = Math.min(1, Math.max(0, p));
+      const vMin = fadeOnly ? 0 : s.volMin;
+      out.push({ f: Math.round(s.freq), d: upd, v: (vMin + (s.volMax - vMin) * p) / 100 });
+    }
+    return out;
+  }
+
+  function buildSteps(famKey, stKey) {
+    const f = FAMILIES[famKey];
+    const st = STATES[stKey];
+
+    if (f.kind === "siren" && !activeBuzzer) {
+      const notes = sirenSteps(f.siren, st.sirenRate, stKey === "cleared");
+      return notes.map(n => ({ f: n.f, d: n.d, v: n.v }));
+    }
+
+    const p = f.states[stKey];
+    const steps = [];
+    p.notes.forEach((n, i) => {
+      steps.push({ f: activeBuzzer ? ACTIVE_FREQ : n.f, d: n.d, v: 1 });
+      if (i < p.notes.length - 1 && p.gap > 0) steps.push({ f: 0, d: p.gap, v: 0 });
+    });
+    if (st.loop && p.cycleGap > 0) steps.push({ f: 0, d: p.cycleGap, v: 0 });
+    return steps;
+  }
+
+  function cycleMsOf(famKey, stKey) {
+    return buildSteps(famKey, stKey).reduce((a, x) => a + x.d, 0);
+  }
+
+  // Deux notes voisines de meme frequence sans silence entre elles n'en font
+  // qu'une a l'oreille : on le signale plutot que de laisser croire a 3 bips.
+  function fusedRuns(famKey, stKey) {
+    const f = FAMILIES[famKey];
+    if (f.kind === "siren" && !activeBuzzer) return 0;
+    const p = f.states[stKey];
+    if (p.gap > 0) return 0;
+    let fused = 0;
+    for (let i = 1; i < p.notes.length; i++) {
+      if ((activeBuzzer ? ACTIVE_FREQ : p.notes[i].f) === (activeBuzzer ? ACTIVE_FREQ : p.notes[i - 1].f)) fused++;
+    }
+    return fused;
+  }
+
+  function stopAll(keepReadout) {
+    token++;
+    if (loopTimer) { clearTimeout(loopTimer); loopTimer = null; }
+    if (raf) { cancelAnimationFrame(raf); raf = null; }
+    current = null;
+    document.querySelectorAll(".cell").forEach(c => c.setAttribute("aria-pressed", "false"));
+    setLed(null, false);
+    const buz = document.getElementById("pin-buz");
+    buz.textContent = "BAS"; buz.className = "";
+    if (!keepReadout) {
+      document.getElementById("now").textContent = "— au repos —";
+      document.getElementById("meta").textContent = "Aucun signal actif.";
+    }
+  }
+
+  function play(famKey, stKey, opts) {
+    const hidden = !!(opts && opts.hidden);
+    stopAll(true);
+    const my = ++token;
+    const a = audio();
+    const steps = buildSteps(famKey, stKey);
+    const cycleMs = steps.reduce((s, x) => s + x.d, 0);
+    const st = STATES[stKey];
+    current = { famKey, stKey, steps, cycleMs, t0: performance.now(), hidden };
+
+    if (!hidden) {
+      const cell = document.querySelector('.cell[data-fam="' + famKey + '"][data-state="' + stKey + '"]');
+      if (cell) cell.setAttribute("aria-pressed", "true");
+    }
+    renderReadout();
+    renderBars(steps, -1);
+    document.getElementById("cycle-ms").textContent = (cycleMs / 1000).toFixed(2) + " s";
+
+    const run = () => {
+      if (my !== token) return;
+      schedule(steps, a.currentTime + 0.03);
+      if (st.loop) loopTimer = setTimeout(run, cycleMs);
+    };
+    run();
+    animate(my);
+  }
+
+  // ---------- Rendu ----------
+  function renderReadout() {
+    const now = document.getElementById("now");
+    const meta = document.getElementById("meta");
+    if (!current) return;
+    if (current.hidden) {
+      now.textContent = "signal mystère en cours";
+      meta.textContent = "Identifie la famille et l'état ci-dessous.";
+      return;
+    }
+    const ev = EVENTS[current.famKey][current.stKey];
+    now.textContent = ev[0];
+    const rank = PRIORITY.indexOf(ev[0]);
+    const prio = rank >= 0 ? "priorité " + (rank + 1) + "/" + PRIORITY.length : "hors file de priorité";
+    meta.textContent = FAMILIES[current.famKey].label + " · " + STATES[current.stKey].label + " · " + ev[1] + " · " + prio;
+  }
+
+  function setLed(color, on) {
+    const led = document.getElementById("led");
+    const pr = document.getElementById("pin-red");
+    const pg = document.getElementById("pin-green");
+    const css = getComputedStyle(document.documentElement);
+
+    let redHi = false, greenHi = false, paint = "";
+    if (on && color === "amber") { redHi = true; greenHi = true; paint = css.getPropertyValue("--sig-amber").trim(); }
+    else if (on && color === "red") { redHi = true; paint = css.getPropertyValue("--sig-red").trim(); }
+    else if (on && color === "green") { greenHi = true; paint = css.getPropertyValue("--sig-green").trim(); }
+
+    if (paint) { led.style.background = paint; led.style.boxShadow = "0 0 18px " + paint; }
+    else { led.style.background = ""; led.style.boxShadow = ""; }
+    pr.textContent = redHi ? "HAUT" : "BAS";
+    pg.textContent = greenHi ? "HAUT" : "BAS";
+    pr.className = redHi ? "pin-hi" : "";
+    pg.className = greenHi ? "pin-hi" : "";
+  }
+
+  function renderBars(steps, activeIdx) {
+    const host = document.getElementById("bars");
+    const byVol = steps.some(s => s.f > 0 && s.v !== undefined && s.v < 0.999);
+    const unit = document.getElementById("chrono-unit");
+    if (unit) unit.textContent = byVol ? "Enveloppe · hauteur = volume" : "Chronogramme · hauteur = fréquence";
+
+    const sig = (byVol ? "v" : "f") + steps.map(s => s.f + ":" + s.d + ":" + Math.round((s.v === undefined ? 1 : s.v) * 100)).join(",");
+    if (host.dataset.sig !== sig) {
+      host.dataset.sig = sig;
+      host.textContent = "";
+      const dense = steps.length > 60;
+      host.style.gap = dense ? "0px" : "1px";
+      const maxF = Math.max(1, ...steps.map(s => s.f));
+      steps.forEach(s => {
+        const b = document.createElement("div");
+        b.className = "bar-item" + (s.f === 0 ? " silent" : "");
+        b.style.flexGrow = String(Math.max(1, s.d));
+        if (dense) { b.style.minWidth = "0"; b.style.borderRadius = "0"; }
+        const v = s.v === undefined ? 1 : s.v;
+        const h = byVol ? (3 + 97 * v) : (26 + 74 * (s.f / maxF));
+        b.style.height = s.f === 0 ? "2px" : h + "%";
+        host.appendChild(b);
+      });
+    }
+    const kids = host.children;
+    for (let i = 0; i < kids.length; i++) kids[i].classList.toggle("on", i === activeIdx);
+  }
+
+  function animate(my) {
+    const tick = () => {
+      if (my !== token || !current) return;
+      const st = STATES[current.stKey];
+      const elapsed = performance.now() - current.t0;
+      const pos = st.loop ? elapsed % current.cycleMs : Math.min(elapsed, current.cycleMs);
+
+      let acc = 0, idx = -1, sounding = false;
+      for (let i = 0; i < current.steps.length; i++) {
+        const s = current.steps[i];
+        if (pos >= acc && pos < acc + s.d) { idx = i; sounding = s.f > 0; break; }
+        acc += s.d;
+      }
+      renderBars(current.steps, idx);
+      const buz = document.getElementById("pin-buz");
+      buz.textContent = sounding ? "HAUT" : "BAS";
+      buz.className = sounding ? "pin-hi" : "";
+
+      const on = st.blinkMs === 0 ? true : (Math.floor(elapsed / st.blinkMs) % 2 === 0);
+      setLed(st.led, on);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+  }
+
+  // ---------- Matrice ----------
+  function motifText(famKey) {
+    const f = FAMILIES[famKey];
+    if (activeBuzzer) return "mono-ton " + ACTIVE_FREQ + " Hz";
+    if (f.kind === "siren") return f.siren.freq + " Hz · cycle " + (f.siren.cycleMs / 1000).toFixed(1) + " s";
+    const fr = f.states.confirmed.notes.map(n => n.f);
+    const uniq = [...new Set(fr)];
+    return uniq.length === 1 ? uniq[0] + " Hz" : fr.join(" → ") + " Hz";
+  }
+
+  function contourText(famKey) {
+    const f = FAMILIES[famKey];
+    if (f.kind === "siren") return "sirène, volume pulsé";
+    const fr = f.states.confirmed.notes.map(n => n.f);
+    if (fr.every(x => x === fr[0])) return "contour plat";
+    let up = 0, down = 0;
+    for (let i = 1; i < fr.length; i++) { if (fr[i] > fr[i - 1]) up++; else if (fr[i] < fr[i - 1]) down++; }
+    if (up && down) return "contour alternant";
+    return up ? "contour montant" : "contour descendant";
+  }
+
+  function buildMatrix() {
+    const host = document.getElementById("matrix");
+    host.textContent = "";
+    for (const famKey of Object.keys(FAMILIES)) {
+      const f = FAMILIES[famKey];
+      const sec = document.createElement("section");
+      sec.className = "fam";
+
+      const head = document.createElement("div");
+      head.className = "fam-head";
+      const h2 = document.createElement("h2");
+      h2.textContent = f.label;
+      const ct = document.createElement("span");
+      ct.className = "contour"; ct.dataset.fam = famKey; ct.textContent = contourText(famKey);
+      const mo = document.createElement("span");
+      mo.className = "motif"; mo.dataset.fam = famKey; mo.textContent = motifText(famKey);
+      head.append(h2, ct, mo);
+
+      const cells = document.createElement("div");
+      cells.className = "cells";
+      for (const stKey of ST_ORDER) {
+        const ev = EVENTS[famKey][stKey];
+        const b = document.createElement("button");
+        b.className = "cell";
+        b.dataset.fam = famKey; b.dataset.state = stKey;
+        b.setAttribute("aria-pressed", "false");
+        const s1 = document.createElement("span");
+        s1.className = "state"; s1.textContent = STATES[stKey].label;
+        const s2 = document.createElement("span");
+        s2.className = "code"; s2.textContent = ev[0];
+        const s3 = document.createElement("span");
+        s3.className = "detail"; s3.textContent = ev[1];
+        b.append(s1, s2, s3);
+        b.addEventListener("click", () => { endBlind(); play(famKey, stKey); });
+        cells.appendChild(b);
+      }
+      sec.append(head, cells);
+      host.appendChild(sec);
+    }
+  }
+
+  function refreshLabels() {
+    document.querySelectorAll(".motif").forEach(el => { el.textContent = motifText(el.dataset.fam); });
+    document.querySelectorAll(".contour").forEach(el => { el.textContent = contourText(el.dataset.fam); });
+  }
+
+  // ---------- Réglages ----------
+  function applied(rebuildTune) {
+    refreshLabels();
+    renderExport();
+    if (rebuildTune) buildTune();
+    else document.querySelectorAll(".dur").forEach(el => {
+      el.textContent = durText(el.dataset.fam, el.dataset.state);
+    });
+    if (current) play(current.famKey, current.stKey, { hidden: current.hidden });
+  }
+
+  function durText(famKey, stKey) {
+    const ms = cycleMsOf(famKey, stKey);
+    const fused = fusedRuns(famKey, stKey);
+    let t = "cycle " + (ms / 1000).toFixed(2) + " s";
+    if (!STATES[stKey].loop) t += " · une fois";
+    if (fused > 0) t += " · " + (fused + 1) + " bips fusionnés";
+    return t;
+  }
+
+  function numRow(labelText, value, min, max, step, onChange) {
+    const row = document.createElement("div");
+    row.className = "num";
+    const id = "n" + Math.random().toString(36).slice(2, 8);
+    const lab = document.createElement("label");
+    lab.textContent = labelText; lab.htmlFor = id;
+    const inp = document.createElement("input");
+    inp.type = "number"; inp.id = id; inp.value = String(value);
+    inp.min = String(min); inp.max = String(max); inp.step = String(step);
+    inp.addEventListener("change", () => {
+      let v = Number(inp.value);
+      if (!Number.isFinite(v)) v = value;
+      v = Math.min(max, Math.max(min, v));
+      inp.value = String(v);
+      onChange(v);
+      applied(false);
+    });
+    row.append(lab, inp);
+    return row;
+  }
+
+  function sep(text) {
+    const d = document.createElement("div");
+    d.className = "tune-sep"; d.textContent = text;
+    return d;
+  }
+
+  function noteEditor(famKey, stKey) {
+    const p = FAMILIES[famKey].states[stKey];
+    const frag = document.createDocumentFragment();
+
+    const head = document.createElement("div");
+    head.className = "note-head";
+    ["#", "Hz", "ms", ""].forEach(t => { const s = document.createElement("span"); s.textContent = t; head.appendChild(s); });
+    frag.appendChild(head);
+
+    p.notes.forEach((n, i) => {
+      const row = document.createElement("div");
+      row.className = "note-row";
+      const idx = document.createElement("span");
+      idx.className = "idx"; idx.textContent = String(i + 1);
+
+      const fi = document.createElement("input");
+      fi.type = "number"; fi.min = "100"; fi.max = "4500"; fi.step = "10"; fi.value = String(n.f);
+      fi.setAttribute("aria-label", "Fréquence du bip " + (i + 1));
+      fi.addEventListener("change", () => {
+        const v = Math.min(4500, Math.max(100, Number(fi.value) || n.f));
+        fi.value = String(v); n.f = v; applied(false);
+      });
+
+      const di = document.createElement("input");
+      di.type = "number"; di.min = "20"; di.max = "3000"; di.step = "10"; di.value = String(n.d);
+      di.setAttribute("aria-label", "Durée du bip " + (i + 1));
+      di.addEventListener("change", () => {
+        const v = Math.min(3000, Math.max(20, Number(di.value) || n.d));
+        di.value = String(v); n.d = v; applied(false);
+      });
+
+      const del = document.createElement("button");
+      del.type = "button"; del.textContent = "×";
+      del.title = "Supprimer ce bip";
+      del.setAttribute("aria-label", "Supprimer le bip " + (i + 1));
+      del.disabled = p.notes.length <= 1;
+      del.addEventListener("click", () => { p.notes.splice(i, 1); applied(true); });
+
+      row.append(idx, fi, di, del);
+      frag.appendChild(row);
+    });
+
+    const add = document.createElement("button");
+    add.type = "button"; add.className = "btn btn-tiny";
+    add.style.marginTop = "4px"; add.textContent = "+ Ajouter un bip";
+    add.addEventListener("click", () => {
+      const last = p.notes[p.notes.length - 1];
+      p.notes.push({ f: last ? last.f : 800, d: last ? last.d : 100 });
+      applied(true);
+    });
+    frag.appendChild(add);
+    return frag;
+  }
+
+  function buildTune() {
+    const host = document.getElementById("tune");
+    host.textContent = "";
+
+    for (const famKey of Object.keys(FAMILIES)) {
+      const f = FAMILIES[famKey];
+      const card = document.createElement("div");
+      card.className = "fam-tune";
+
+      const hd = document.createElement("header");
+      const h3 = document.createElement("h3");
+      h3.textContent = f.label;
+      const seg = document.createElement("div");
+      seg.className = "seg mini";
+      seg.setAttribute("role", "group");
+      seg.setAttribute("aria-label", "Type de signal pour " + f.label);
+      [["motif", "Bips"], ["siren", "Sirène"]].forEach(pair => {
+        const b = document.createElement("button");
+        b.type = "button"; b.textContent = pair[1];
+        b.setAttribute("aria-pressed", String(f.kind === pair[0]));
+        b.addEventListener("click", () => { f.kind = pair[0]; applied(true); });
+        seg.appendChild(b);
+      });
+      hd.append(h3, seg);
+      card.appendChild(hd);
+
+      if (f.kind === "siren") {
+        const col = document.createElement("div");
+        col.className = "state-grid";
+        const c1 = document.createElement("div");
+        c1.className = "state-col";
+        c1.appendChild(numRow("Fréquence (Hz)", f.siren.freq, 200, 3000, 10, v => { f.siren.freq = v; }));
+        c1.appendChild(numRow("Durée d'un cycle (ms)", f.siren.cycleMs, 1000, 15000, 250, v => { f.siren.cycleMs = v; }));
+        c1.appendChild(numRow("Part de montée (%)", f.siren.rise, 5, 95, 5, v => { f.siren.rise = v; }));
+        const c2 = document.createElement("div");
+        c2.className = "state-col";
+        c2.appendChild(numRow("Volume mini (%)", f.siren.volMin, 0, 90, 1, v => { f.siren.volMin = v; }));
+        c2.appendChild(numRow("Volume maxi (%)", f.siren.volMax, 10, 100, 1, v => { f.siren.volMax = v; }));
+        c2.appendChild(numRow("Pas de mise à jour (ms)", f.siren.updateMs, 5, 200, 5, v => { f.siren.updateMs = v; }));
+        const c3 = document.createElement("div");
+        c3.className = "state-col";
+        c3.appendChild(numRow("Vitesse à vérifier (×)", STATES.suspected.sirenRate, 0.2, 4, 0.05, v => { STATES.suspected.sirenRate = v; }));
+        c3.appendChild(numRow("Vitesse confirmé (×)", STATES.confirmed.sirenRate, 0.2, 4, 0.05, v => { STATES.confirmed.sirenRate = v; }));
+        c3.appendChild(numRow("Vitesse aggravation (×)", STATES.escalated.sirenRate, 0.2, 4, 0.05, v => { STATES.escalated.sirenRate = v; }));
+        col.append(c1, c2, c3);
+        card.appendChild(col);
+      } else {
+        const grid = document.createElement("div");
+        grid.className = "state-grid";
+        for (const stKey of ST_ORDER) {
+          const p = f.states[stKey];
+          const col = document.createElement("div");
+          col.className = "state-col " + stKey;
+          const h4 = document.createElement("h4");
+          h4.textContent = STATES[stKey].label;
+          const dur = document.createElement("span");
+          dur.className = "dur"; dur.dataset.fam = famKey; dur.dataset.state = stKey;
+          dur.textContent = durText(famKey, stKey);
+          col.append(h4, dur);
+          col.appendChild(noteEditor(famKey, stKey));
+          col.appendChild(numRow("Écart entre bips (ms)", p.gap, 0, 5000, 10, v => { p.gap = v; }));
+          if (STATES[stKey].loop) {
+            col.appendChild(numRow("Écart entre cycles (ms)", p.cycleGap, 0, 12000, 10, v => { p.cycleGap = v; }));
+          }
+          grid.appendChild(col);
+        }
+        card.appendChild(grid);
+      }
+      host.appendChild(card);
+    }
+  }
+
+  // ---------- Export ----------
+  function renderExport() {
+    const L = [];
+    L.push("// Sentinel-X / esp01 - genere par la console d'alertes");
+    L.push("// Un motif independant par case : 3 familles x 4 etats.");
+    L.push("// freq 0 = silence. Le dernier silence de chaque table est l'ecart");
+    L.push("// entre deux cycles ; il n'existe pas pour l'etat \"levee\", joue une fois.");
+    L.push("");
+    L.push("struct Step { uint16_t freq_hz; uint16_t dur_ms; };");
+    L.push("");
+
+    for (const famKey of Object.keys(FAMILIES)) {
+      const f = FAMILIES[famKey];
+      const NAME = famKey.toUpperCase();
+      L.push("// ---------------------------------------------------------------");
+      L.push("// " + f.label);
+      if (f.kind === "siren") {
+        const s = f.siren;
+        L.push("// SIRENE : note tenue dont le volume enfle et retombe.");
+        L.push("// tone() ne regle pas le volume : analogWriteFreq(" + s.freq + ") puis");
+        L.push("// analogWrite(PIN_BUZZER, duty) rafraichi toutes les " + s.updateMs + " ms.");
+        L.push("// duty " + Math.round(s.volMin / 100 * 511) + " -> " + Math.round(s.volMax / 100 * 511) +
+          " (511 = 50 % = volume maxi d'un piezo), cycle " + s.cycleMs + " ms, montee " + s.rise + " %.");
+        L.push("");
+        continue;
+      }
+      for (const stKey of ST_ORDER) {
+        const steps = buildSteps(famKey, stKey);
+        const tbl = steps.map(s => "{" + s.f + "," + s.d + "}").join(",");
+        L.push("// " + STATES[stKey].label + " - " + EVENTS[famKey][stKey][0] +
+          " - cycle " + (cycleMsOf(famKey, stKey) / 1000).toFixed(2) + " s" +
+          (STATES[stKey].loop ? " en boucle" : ", joue une fois"));
+        L.push("const Step " + NAME + "_" + stKey.toUpperCase() + "[] = {" + tbl + "};");
+      }
+      L.push("");
+    }
+
+    L.push("// ---------------------------------------------------------------");
+    L.push("// LED : orange 1 Hz (a verifier), rouge 2 Hz (confirme),");
+    L.push("//       rouge fixe (aggravation), vert fixe (levee).");
+    L.push("");
+    L.push("enum Family { FAM_INTRUSION = 0, FAM_TAMPER = 1, FAM_ENV = 2 };");
+    L.push("enum State  { ST_SUSPECTED = 0, ST_CONFIRMED = 1, ST_ESCALATED = 2, ST_CLEARED = 3 };");
+    L.push("");
+    L.push("// File de priorite : une fuite de gaz ne doit jamais etre masquee.");
+    PRIORITY.forEach((c, i) => L.push("// " + (i + 1) + ". " + c));
+    L.push("");
+    L.push("// Buzzer actif (mono-ton) : memes durees, toutes les frequences a " + ACTIVE_FREQ + " Hz.");
+    L.push("// Les motifs dont les bips ne different que par la hauteur deviennent");
+    L.push("// alors indistinguables : verifier au basculement dans la console.");
+    document.getElementById("export").textContent = L.join("\n");
+  }
+
+  // ---------- Test à l'aveugle ----------
+  function startBlind() {
+    const fams = Object.keys(FAMILIES);
+    blind.on = true;
+    blind.fam = fams[Math.floor(Math.random() * fams.length)];
+    blind.st = ST_ORDER[Math.floor(Math.random() * ST_ORDER.length)];
+    document.getElementById("verdict").hidden = true;
+
+    const host = document.getElementById("blind-guess");
+    host.hidden = false; host.textContent = "";
+    for (const famKey of fams) {
+      for (const stKey of ST_ORDER) {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "guess";
+        b.textContent = FAMILIES[famKey].short + " · " + STATES[stKey].label;
+        b.addEventListener("click", () => judge(famKey, stKey));
+        host.appendChild(b);
+      }
+    }
+    play(blind.fam, blind.st, { hidden: true });
+  }
+
+  function judge(famKey, stKey) {
+    if (!blind.on) return;
+    const ok = famKey === blind.fam && stKey === blind.st;
+    blind.score.total++;
+    if (ok) blind.score.ok++;
+    const v = document.getElementById("verdict");
+    const code = EVENTS[blind.fam][blind.st][0];
+    v.hidden = false;
+    v.className = "verdict " + (ok ? "ok" : "ko");
+    v.textContent = ok ? "Exact : " + code + "."
+      : "Raté. C'était " + code + " (" + FAMILIES[blind.fam].label + " · " + STATES[blind.st].label + ").";
+    document.getElementById("score").textContent = blind.score.ok + " / " + blind.score.total + " identifiés";
+    document.getElementById("blind-guess").hidden = true;
+    blind.on = false;
+    if (current) { current.hidden = false; renderReadout(); }
+  }
+
+  function endBlind() {
+    if (!blind.on) return;
+    blind.on = false;
+    document.getElementById("blind-guess").hidden = true;
+    document.getElementById("verdict").hidden = true;
+  }
+
+  // ---------- Câblage de l'interface ----------
+  document.getElementById("stop").addEventListener("click", () => { endBlind(); stopAll(false); });
+  document.getElementById("vol").addEventListener("input", e => {
+    if (master) master.gain.value = Number(e.target.value) / 100;
+  });
+
+  function setMode(active) {
+    activeBuzzer = active;
+    document.getElementById("mode-passive").setAttribute("aria-pressed", String(!active));
+    document.getElementById("mode-active").setAttribute("aria-pressed", String(active));
+    applied(true);
+  }
+  document.getElementById("mode-passive").addEventListener("click", () => setMode(false));
+  document.getElementById("mode-active").addEventListener("click", () => setMode(true));
+  document.getElementById("blind-start").addEventListener("click", startBlind);
+
+  document.getElementById("copy").addEventListener("click", async () => {
+    const txt = document.getElementById("export").textContent;
+    const hint = document.getElementById("copy-hint");
+    try {
+      await navigator.clipboard.writeText(txt);
+      hint.textContent = "Copié";
+    } catch (e) {
+      const r = document.createRange();
+      r.selectNodeContents(document.getElementById("export"));
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(r);
+      hint.textContent = "Sélectionné — Cmd+C pour copier";
+    }
+    setTimeout(() => { hint.textContent = ""; }, 2600);
+  });
+
+  buildMatrix();
+  buildTune();
+  renderExport();
+
+  (function preview() {
+    const steps = buildSteps("intrusion", "confirmed");
+    renderBars(steps, -1);
+    document.getElementById("cycle-ms").textContent = (steps.reduce((a, x) => a + x.d, 0) / 1000).toFixed(2) + " s";
+    document.getElementById("meta").textContent = "Aperçu : intrusion_unknown.";
+  })();
+</script>
