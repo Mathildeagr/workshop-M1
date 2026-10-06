@@ -1,17 +1,17 @@
 #pragma once
 
-#include <PubSubClient.h>
+#include <MQTT.h>
 #include <WiFiClient.h>
+#include "app/telemetry.h"
 #include "net/command.h"
 #include "net/network.h"
-#include "app/telemetry.h"
 
 // Publie evenements et mesures sur Mosquitto. Le backend est abonne : le noeud
 // ne connait pas son adresse et n'a pas a la connaitre.
 //
-// Les evenements emis hors ligne sont gardes en attente et rejoues des que le
-// broker revient : un evenement de sabotage ne doit pas disparaitre parce que
-// le point d'acces a clignote.
+// Evenements en QoS 1 : le broker accuse chaque trame, la bibliotheque
+// retransmet jusqu'a l'accuse. Mesures en QoS 0 : la suivante arrive dans deux
+// secondes, une perte ne justifie pas de bloquer la boucle.
 class MqttClient : public ITelemetrySink {
 public:
   MqttClient(const WifiLink &link, const char *host, uint16_t port,
@@ -41,13 +41,16 @@ private:
     char        detail[24];
     float       value;
     EventOrigin origin;
+    uint32_t    seq;
     uint32_t    uptime_s;   // horodatage relatif : le noeud n'a pas d'heure
   };
 
-  static void trampoline(char *topic, uint8_t *payload, unsigned int length);
+  static void onMessage(MQTTClient *client, char topic[], char bytes[], int length);
+
   bool reconnect();
   bool sendEvent(const Event &e);
   void enqueue(const Event &e);
+  void scheduleRetry(bool sent);
 
   const WifiLink &_link;
   const char     *_host;
@@ -56,25 +59,32 @@ private:
   const char     *_user;
   const char     *_password;
 
-  WiFiClient   _net;
-  PubSubClient _mqtt;
+  WiFiClient _net;
+  MQTTClient _mqtt;
+
+  ICommandSink *_commands;
 
   char _topicEvents[48];
   char _topicTelemetry[48];
   char _topicStatus[48];
   char _topicCommand[48];
 
-  ICommandSink *_commands;
-
   static const uint8_t QUEUE_SIZE = 8;
   Event    _queue[QUEUE_SIZE];
   uint8_t  _head;
   uint8_t  _count;
   uint16_t _dropped;
-  uint32_t _lastRetry;
-  uint32_t _lastFlush;
+  uint32_t _seq;
 
-  static const uint32_t RETRY_PERIOD_MS = 3000;
-  static const uint32_t FLUSH_PERIOD_MS = 200;
-  static const uint16_t BUFFER_SIZE     = 512;
+  uint32_t _nextFlush;
+  uint32_t _flushDelay;
+  uint32_t _nextRetry;
+  uint32_t _connectDelay;
+
+  static const uint16_t BUFFER_SIZE    = 512;
+  static const uint16_t ACK_TIMEOUT_MS = 1000;
+  static const uint32_t FLUSH_MIN_MS   = 200;
+  static const uint32_t FLUSH_MAX_MS   = 5000;
+  static const uint32_t CONNECT_MIN_MS = 1000;
+  static const uint32_t CONNECT_MAX_MS = 30000;
 };
