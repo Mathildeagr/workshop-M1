@@ -1,16 +1,24 @@
 #include "alert_policy.h"
 
 AlertPolicy::AlertPolicy(StatusLed &led, ITelemetrySink &sink)
-  : _led(led), _sink(sink) {}
+  : _linkUp(false), _led(led), _sink(sink) {}
 
 void AlertPolicy::begin() {
   idle();
 }
 
-// Au repos : respiration verte. Une respiration se voit de loin sans accrocher
-// l'oeil comme un clignotement, qu'on finirait par ignorer.
+void AlertPolicy::setLinkUp(bool up) {
+  if (up == _linkUp) return;
+  _linkUp = up;
+  idle();
+}
+
+// Au repos : respiration verte quand le lien est etabli, eclat bref sinon.
+// Le vert dit qu'aucune alerte n'est en cours, le rythme dit l'etat du reseau.
+// Une respiration se voit de loin sans accrocher l'oeil comme un clignotement.
 void AlertPolicy::idle() {
-  _led.set(LedColor::Green, LedMode::Breath, 4000);
+  if (_linkUp) _led.set(LedColor::Green, LedMode::Breath, 4000);
+  else         _led.set(LedColor::Green, LedMode::Flash, 2000);
 }
 
 void AlertPolicy::applyLed(State s) {

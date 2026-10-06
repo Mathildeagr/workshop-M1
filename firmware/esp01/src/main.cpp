@@ -1,6 +1,7 @@
 #include <Arduino.h>
-#include <ESP8266WiFi.h>
 
+#include "secrets.h"
+#include "network.h"
 #include "alarm.h"
 #include "jingles.h"
 #include "led.h"
@@ -38,6 +39,9 @@ static PirSensor     pirDevice(PIN_PIR);
 static ContactSensor tiltDevice(PIN_TILT, "SW-520D", PinBias::PullUp, -1, 50, 300, 800, 400);
 static ContactSensor opticDevice(PIN_OPTIC, "FC-51", PinBias::None, 1, 30, 120, 800, 0);
 
+static WifiLink     link(WIFI_SSID, WIFI_PASSWORD,
+                        IPAddress(NET_STATIC_IP), IPAddress(NET_GATEWAY),
+                        IPAddress(NET_SUBNET),    IPAddress(NET_DNS));
 static StatusLed    statusLed(PIN_LED_RED, PIN_LED_GREEN);
 static StatusScreen screen(0x3C);
 static UptimeClock  uptimeClock;
@@ -56,6 +60,7 @@ static AlertPolicy policy(statusLed, telemetry);
 static TelemetryFrame frame;
 static ScreenData     screenData;
 static uint32_t       lastTelemetry = 0;
+static LinkState      lastLinkState = LinkState::Down;
 static bool           climateFaultReported = false;
 static bool           gasFaultReported     = false;
 
@@ -133,20 +138,45 @@ static void readTamper() {
   }
 }
 
+// Le lien remonte et redescend tout seul : on se contente de suivre ses
+// transitions pour le retour sonore et lumineux.
+static void followLink() {
+  link.update();
+
+  const LinkState now = link.state();
+  if (now == lastLinkState) return;
+
+  if (now == LinkState::Up) {
+    jinglePlay(JIN_WIFI_OK);
+    Serial.print(F("wifi connecte, adresse "));
+    Serial.print(link.statusText());
+    Serial.print(F(", rssi "));
+    Serial.print(link.rssi());
+    Serial.println(F(" dBm"));
+  } else if (lastLinkState == LinkState::Up) {
+    jinglePlay(JIN_WIFI_FAIL);
+    Serial.println(F("wifi perdu, nouvelle tentative"));
+  }
+
+  policy.setLinkUp(now == LinkState::Up);
+  lastLinkState = now;
+}
+
 static void publishTelemetry() {
   const uint32_t now = millis();
   if (now - lastTelemetry < TELEMETRY_PERIOD_MS) return;
   lastTelemetry = now;
 
   frame.uptime_s = wallClock.uptimeSeconds();
-  frame.wifi_up  = (WiFi.status() == WL_CONNECTED);
+  frame.wifi_up  = link.isConnected();
   telemetry.publish(frame);
 }
 
 static void refreshScreen() {
   wallClock.hms(screenData.hh, screenData.mm, screenData.ss);
-  screenData.wall_clock = wallClock.hasWallClock();
-  screenData.wifi_up    = (WiFi.status() == WL_CONNECTED);
+  screenData.wall_clock   = wallClock.hasWallClock();
+  screenData.wifi_up      = link.isConnected();
+  screenData.network_text = link.statusText();
   screen.update(screenData);
 }
 
@@ -162,6 +192,7 @@ void setup() {
   optic.begin();
   telemetry.begin();
   policy.begin();
+  link.begin();
 
   frame      = TelemetryFrame();
   screenData = ScreenData();
@@ -187,6 +218,12 @@ void setup() {
   }
   Serial.println();
 
+  Serial.print(F("wifi "));
+  Serial.print(WIFI_SSID);
+  Serial.print(F(", adresse fixe "));
+  Serial.println(IPAddress(NET_STATIC_IP).toString());
+  Serial.println();
+
   jinglePlay(JIN_BOOT);
   screen.splash(alarmUpdate);
 }
@@ -194,6 +231,7 @@ void setup() {
 void loop() {
   alarmUpdate();
   statusLed.update();
+  followLink();
 
   readPresence();
   readTamper();

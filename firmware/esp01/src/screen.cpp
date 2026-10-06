@@ -130,9 +130,10 @@ void StatusScreen::drawSystem(int16_t x, const ScreenData &d) {
 
   _u8g2.drawHLine(x + 14, HEADER_H + 33, 100);
 
-  drawWifi(x + 22, H - 4, d.wifi_up);
+  drawWifi(x + 12, H - 4, d.wifi_up);
   _u8g2.setFont(FONT_SMALL);
-  _u8g2.drawStr(x + 40, H - 3, d.wifi_up ? "wifi ok" : "wifi down");
+  _u8g2.drawStr(x + 26, H - 3,
+                d.network_text != nullptr ? d.network_text : "hors ligne");
 }
 
 void StatusScreen::drawPage(uint8_t page, int16_t x, const ScreenData &d) {

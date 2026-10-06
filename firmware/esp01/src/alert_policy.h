@@ -14,6 +14,7 @@ public:
   AlertPolicy(StatusLed &led, ITelemetrySink &sink);
 
   void begin();
+  void setLinkUp(bool up);
   void raise(Family f, State s, const char *detail = nullptr);
   void idle();
 
@@ -23,6 +24,7 @@ public:
 private:
   void applyLed(State s);
 
+  bool            _linkUp;
   StatusLed      &_led;
   ITelemetrySink &_sink;
 };

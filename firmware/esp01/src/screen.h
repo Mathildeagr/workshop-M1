@@ -7,8 +7,9 @@ struct ScreenData {
   bool     climate_valid;
   float    temperature_c;
   float    humidity_pct;
-  bool     wifi_up;
-  uint8_t  hh, mm, ss;
+  bool        wifi_up;
+  const char *network_text;   // adresse IP, ou l'etat de la connexion
+  uint8_t     hh, mm, ss;
   bool     wall_clock;
 };
 

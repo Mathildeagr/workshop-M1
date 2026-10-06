@@ -1,1 +1,4 @@
 .pio
+
+# Identifiants du reseau de table
+src/secrets.h
