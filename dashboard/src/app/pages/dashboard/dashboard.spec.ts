@@ -1,6 +1,8 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
+import { AlertsService } from '../../services/alerts.service';
 import { ApiService, type Alert, type Metric } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { Dashboard } from './dashboard';
@@ -24,6 +26,13 @@ describe('Dashboard', () => {
 
   afterEach(() => vi.useRealTimers());
 
+  // Alertes temps réel simulées : la liste vient de "getAlerts" de l'API simulée
+  function fakeAlertsService(api: Partial<ApiService>) {
+    const list = signal<Alert[]>([]);
+    api.getAlerts?.().subscribe((a) => list.set(a));
+    return { alerts: list.asReadonly(), live: signal(true), connect: vi.fn(), disconnect: vi.fn() };
+  }
+
   function setup(api: Partial<ApiService>, role = 'lecteur') {
     const vision: Partial<ApiService> = {
       getVisionStatus: () => of(null),
@@ -36,6 +45,7 @@ describe('Dashboard', () => {
         provideRouter([]),
         { provide: ApiService, useValue: { ...vision, ...api } },
         { provide: AuthService, useValue: { logout: vi.fn(), user: () => ({ id: 1, username: 'u', role }) } },
+        { provide: AlertsService, useValue: fakeAlertsService(api) },
       ],
     });
     const fixture = TestBed.createComponent(Dashboard);
@@ -62,6 +72,20 @@ describe('Dashboard', () => {
     expect(el.querySelector('.status')?.textContent).toContain('Détectée');
     expect(el.querySelectorAll('.alert').length).toBe(1);
     expect(el.querySelectorAll('app-line-chart').length).toBe(3);
+  });
+
+  it('affiche le niveau et le détail des alertes temps réel', () => {
+    const scan: Alert = {
+      id: 2, source: 'scan', type: 'mqtt_bruteforce', level: 'critical', acknowledged: false,
+      value: { ip: '::1', failures: 5 }, createdAt: new Date(now).toISOString(),
+    };
+    const { el } = setup({ isApiUp: () => of(true), getMetrics: () => of([]), getAlerts: () => of([scan]) });
+    const alert = el.querySelector('.alert');
+    expect(alert?.classList).toContain('critical');
+    expect(alert?.textContent).toContain('mqtt_bruteforce (scan)');
+    expect(alert?.querySelector('small')?.textContent).toContain('ip: ::1, failures: 5');
+    expect(el.querySelector('.live')?.textContent).toContain('Temps réel');
+    expect(TestBed.inject(AlertsService).connect).toHaveBeenCalled();
   });
 
   it('affiche le boîtier hors ligne sans mesure récente', () => {

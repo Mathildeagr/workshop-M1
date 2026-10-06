@@ -99,6 +99,40 @@ main {
   color: var(--danger-text);
   font-size: 12px;
 }
+.alert small {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+/* Niveau : critical garde le magenta par défaut */
+.alert.warning { border-left-color: var(--blue); color: var(--text); }
+.alert.info { border-left-color: var(--grey); color: var(--muted); }
+.alert.acknowledged { opacity: 0.5; }
+
+/* Indicateur du flux Socket.io, à côté du titre des alertes */
+.live {
+  margin-left: 10px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.live::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  border: 1.5px solid var(--grey);
+  vertical-align: middle;
+}
+.live.on { color: var(--accent); }
+.live.on::before { border-color: var(--teal); background: var(--teal); }
 .muted { color: var(--muted); }
 
 .vision hr { margin: 24px 0 20px; border: none; border-top: 1px solid var(--border); }
