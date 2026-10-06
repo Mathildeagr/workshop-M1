@@ -17,10 +17,9 @@ public:
     _second.publish(frame);
   }
 
-  void publishEvent(const char *event, const char *level,
-                    const char *detail, float value) override {
-    _first.publishEvent(event, level, detail, value);
-    _second.publishEvent(event, level, detail, value);
+  void publishEvent(const EventRecord &event) override {
+    _first.publishEvent(event);
+    _second.publishEvent(event);
   }
 
 private:

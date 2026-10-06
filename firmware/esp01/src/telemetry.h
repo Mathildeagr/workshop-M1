@@ -30,6 +30,23 @@ struct TelemetryFrame {
   bool     wifi_up;
 };
 
+// Distingue ce que le noeud a constate de ce qu'on lui a demande de jouer.
+// Sans ce marqueur, un ordre recu du backend lui revient a l'identique et rien
+// ne l'empeche de le renvoyer en boucle.
+enum class EventOrigin : uint8_t { Sensor, Command };
+
+inline const char *eventOriginName(EventOrigin o) {
+  return o == EventOrigin::Command ? "command" : "sensor";
+}
+
+struct EventRecord {
+  const char *event;
+  const char *level;
+  const char *detail;   // nullptr si aucune
+  float       value;    // NAN si aucune
+  EventOrigin origin;
+};
+
 class ITelemetrySink {
 public:
   virtual ~ITelemetrySink() {}
@@ -38,10 +55,5 @@ public:
   virtual void update() {}
 
   virtual void publish(const TelemetryFrame &frame) = 0;
-
-  // level : info, warning ou critical.
-  // detail : precision facultative, nullptr si aucune.
-  // value : NAN pour ne rien transmettre.
-  virtual void publishEvent(const char *event, const char *level,
-                            const char *detail, float value) = 0;
+  virtual void publishEvent(const EventRecord &event) = 0;
 };

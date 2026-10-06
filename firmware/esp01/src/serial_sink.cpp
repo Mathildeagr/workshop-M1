@@ -55,21 +55,22 @@ void SerialSink::publish(const TelemetryFrame &f) {
   Serial.println(f.wifi_up ? F("ok") : F("down"));
 }
 
-void SerialSink::publishEvent(const char *event, const char *level,
-                              const char *detail, float value) {
+void SerialSink::publishEvent(const EventRecord &e) {
   stamp(millis() / 1000UL);
   Serial.print(F("evenement "));
-  Serial.print(event);
+  Serial.print(e.event);
   Serial.print(F(" ["));
-  Serial.print(level);
+  Serial.print(e.level);
+  Serial.print('/');
+  Serial.print(eventOriginName(e.origin));
   Serial.print(']');
-  if (detail != nullptr && detail[0] != '\0') {
+  if (e.detail != nullptr && e.detail[0] != '\0') {
     Serial.print(' ');
-    Serial.print(detail);
+    Serial.print(e.detail);
   }
-  if (!isnan(value)) {
+  if (!isnan(e.value)) {
     Serial.print(F(" = "));
-    Serial.print(value, 2);
+    Serial.print(e.value, 2);
   }
   Serial.println();
 }

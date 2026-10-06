@@ -54,18 +54,24 @@ void AlertPolicy::applyLed(State s) {
 }
 
 void AlertPolicy::report(Family f, State s, const char *detail, float value) {
-  _sink.publishEvent(alarmEventName(f, s), levelName(s), detail, value);
+  const EventRecord e = { alarmEventName(f, s), levelName(s), detail, value,
+                          EventOrigin::Sensor };
+  _sink.publishEvent(e);
 }
 
 void AlertPolicy::report(const char *event, const char *level,
                          const char *detail, float value) {
-  _sink.publishEvent(event, level, detail, value);
+  const EventRecord e = { event, level, detail, value, EventOrigin::Sensor };
+  _sink.publishEvent(e);
 }
 
 void AlertPolicy::raise(Family f, State s, const char *detail, float value) {
   if (_sound[f]) alarmPlay(f, s);
   if (_light[f]) applyLed(s);
-  report(f, s, detail, value);
+
+  const EventRecord e = { alarmEventName(f, s), levelName(s), detail, value,
+                          EventOrigin::Command };
+  _sink.publishEvent(e);
 }
 
 // Une presence detectee par le PIR seul ne prouve rien : elle signale une

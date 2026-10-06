@@ -23,8 +23,7 @@ public:
   void update() override;
 
   void publish(const TelemetryFrame &frame) override;
-  void publishEvent(const char *event, const char *level,
-                    const char *detail, float value) override;
+  void publishEvent(const EventRecord &event) override;
 
   bool     isConnected() { return _mqtt.connected(); }
   uint16_t pending() const { return _count; }
@@ -37,11 +36,12 @@ public:
 
 private:
   struct Event {
-    char     name[24];
-    char     level[9];
-    char     detail[24];
-    float    value;
-    uint32_t uptime_s;   // horodatage relatif : le noeud n'a pas d'heure
+    char        name[24];
+    char        level[9];
+    char        detail[24];
+    float       value;
+    EventOrigin origin;
+    uint32_t    uptime_s;   // horodatage relatif : le noeud n'a pas d'heure
   };
 
   static void trampoline(char *topic, uint8_t *payload, unsigned int length);

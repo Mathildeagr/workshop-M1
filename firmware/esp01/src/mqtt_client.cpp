@@ -72,10 +72,12 @@ bool MqttClient::sendEvent(const Event &e) {
   char detail[40] = "";
   if (e.detail[0] != '\0') snprintf(detail, sizeof(detail), ",\"detail\":\"%s\"", e.detail);
 
-  char body[192];
+  char body[224];
   snprintf(body, sizeof(body),
-           "{\"event\":\"%s\",\"level\":\"%s\"%s%s,\"uptime_s\":%lu}",
-           e.name, e.level, value, detail, (unsigned long)e.uptime_s);
+           "{\"event\":\"%s\",\"level\":\"%s\"%s%s,"
+           "\"origin\":\"%s\",\"uptime_s\":%lu}",
+           e.name, e.level, value, detail,
+           eventOriginName(e.origin), (unsigned long)e.uptime_s);
 
   return _mqtt.publish(_topicEvents, body);
 }
@@ -90,17 +92,17 @@ void MqttClient::enqueue(const Event &e) {
   _count++;
 }
 
-void MqttClient::publishEvent(const char *event, const char *level,
-                              const char *detail, float value) {
+void MqttClient::publishEvent(const EventRecord &src) {
   Event e;
-  strncpy(e.name, event, sizeof(e.name) - 1);
+  strncpy(e.name, src.event, sizeof(e.name) - 1);
   e.name[sizeof(e.name) - 1] = '\0';
-  strncpy(e.level, level, sizeof(e.level) - 1);
+  strncpy(e.level, src.level, sizeof(e.level) - 1);
   e.level[sizeof(e.level) - 1] = '\0';
-  if (detail != nullptr) strncpy(e.detail, detail, sizeof(e.detail) - 1);
-  else                   e.detail[0] = '\0';
+  if (src.detail != nullptr) strncpy(e.detail, src.detail, sizeof(e.detail) - 1);
+  else                       e.detail[0] = '\0';
   e.detail[sizeof(e.detail) - 1] = '\0';
-  e.value    = value;
+  e.value    = src.value;
+  e.origin   = src.origin;
   e.uptime_s = millis() / 1000UL;
 
   if (!sendEvent(e)) enqueue(e);

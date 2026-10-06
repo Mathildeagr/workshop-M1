@@ -22,6 +22,8 @@ public:
   // family = FAM_COUNT pour agir sur toutes les familles.
   void setEnabled(uint8_t family, bool sound, bool light, bool enabled);
 
+  // report : le noeud a constate quelque chose.
+  // raise   : le backend a demande de jouer un signal.
   void report(Family f, State s, const char *detail = nullptr, float value = NAN);
   void report(const char *event, const char *level,
               const char *detail = nullptr, float value = NAN);
