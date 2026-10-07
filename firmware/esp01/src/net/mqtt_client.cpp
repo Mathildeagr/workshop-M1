@@ -44,7 +44,15 @@ void MqttClient::onMessage(MQTTClient *client, char topic[], char bytes[], int l
   (void)client;
   (void)topic;
   if (s_instance == nullptr || s_instance->_commands == nullptr) return;
+
+  // Une commande declenche une alerte, qui publie son accuse. Si cet envoi part
+  // d'ici, il s'imbrique dans la lecture en cours : l'acquittement du message
+  // recu ne sort jamais, le broker le redelivre a la reconnexion suivante, et la
+  // meme commande se rejoue en boucle. On note donc l'accuse pour l'envoyer au
+  // tour de boucle suivant.
+  s_instance->_dispatching = true;
   s_instance->_commands->onCommand(bytes, (size_t)length);
+  s_instance->_dispatching = false;
 }
 
 void MqttClient::begin() {
@@ -235,7 +243,7 @@ void MqttClient::publishEvent(const EventRecord &src) {
   e.seq      = ++_seq;   // un trou dans la suite signale une perte au backend
   e.uptime_s = millis() / 1000UL;
 
-  if (!sendEvent(e)) enqueue(e);
+  if (_dispatching || !sendEvent(e)) enqueue(e);
 }
 
 // Les mesures ne sont pas mises en file : une valeur climatique vieille de dix

@@ -92,6 +92,10 @@ private:
 
   ICommandSink *_commands;
 
+  // Vrai pendant le traitement d'un message recu. La bibliotheque MQTT n'est pas
+  // re-entrante : publier depuis sa fonction de reception casse le protocole.
+  bool _dispatching = false;
+
   char _topicEvents[48];
   char _topicTelemetry[48];
   char _topicStatus[48];
