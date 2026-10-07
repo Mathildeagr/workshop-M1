@@ -3,17 +3,22 @@ const express = require("express");
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { Server } = require("socket.io");
-const { sequelize, Role, User, Device } = require("./models");
+const { sequelize, Role, User, Device, Alert } = require("./models");
 const upgradeSchema = require("./schemaUpgrade");
 const { applySecurity, errorHandler, corsOptions } = require("./middleware/security");
-const { verifyToken } = require("./middleware/auth");
+const { verifyToken, requireUser } = require("./middleware/auth");
 const authRouter = require("./routes/auth");
 const usersRouter = require("./routes/users");
 const alertsRouter = require("./routes/alerts");
 const visionRouter = require("./routes/vision");
 const facesRouter = require("./routes/faces");
+const { createCommandPublisher } = require("./commands/publisher");
+const { createIngest } = require("./events/ingest");
+const { createNodeRegistry } = require("./nodes/registry");
+const { connectMqtt } = require("./mqtt/client");
 
 let dbReady = false;
+let mqttClient = null;
 
 const app = express();
 applySecurity(app);
@@ -33,9 +38,14 @@ io.on("connection", (socket) => {
     console.log(`Dashboard connecté : ${socket.user.username} (${socket.id})`);
 });
 
+// Réception des événements (bus MQTT et route HTTP) -> base, dashboard, commandes d'alarme aux nœuds
+const commands = createCommandPublisher({ io });
+const registry = createNodeRegistry({ Alert, Device, io });
+const ingest = createIngest({ Alert, Device, io, commands, alarmNode: config.alarmNode });
+
 // Route de test (publique, ne révèle rien de sensible)
 app.get("/api/v1/health", (req, res) => {
-    res.json({ status: "ok", db: dbReady ? "up" : "down", ts: Date.now() });
+    res.json({ status: "ok", db: dbReady ? "up" : "down", mqtt: mqttClient?.connected ? "up" : "down", ts: Date.now() });
 });
 
 // Comptes et alertes sont en base : réponse claire plutôt qu'une erreur 500 si elle est tombée
@@ -44,7 +54,11 @@ const requireDb = (req, res, next) =>
 
 app.use("/api/v1/auth", requireDb, authRouter);
 app.use("/api/v1/users", requireDb, usersRouter);
-app.use("/api/v1/alerts", requireDb, alertsRouter(io));
+app.use("/api/v1/alerts", requireDb, alertsRouter({ io, ingest }));
+// État des nœuds vus sur le bus (en ligne / hors ligne, dernière télémétrie)
+app.get("/api/v1/nodes", requireUser, (req, res) => {
+    res.json({ mqtt: mqttClient?.connected ?? false, nodes: registry.list() });
+});
 // Service vision (ai-vision/server.py) : pas besoin de la base, 503 si le service est absent
 app.use("/api/v1/vision", visionRouter);
 app.use("/api/v1/faces", facesRouter);
@@ -79,6 +93,16 @@ async function seedDevices() {
     }
 }
 
+// Abonnement au bus : seulement une fois la base prête, sinon les événements reçus seraient perdus
+function startMqtt() {
+    if (!config.mqtt.username) {
+        console.warn("MQTT_USERNAME absent : backend sans MQTT (alertes reçues par HTTP uniquement)");
+        return;
+    }
+    mqttClient = connectMqtt({ ...config.mqtt, ingest, registry });
+    commands.attach(mqttClient);
+}
+
 // Initialisation de la base
 async function initDatabase() {
     try {
@@ -92,6 +116,7 @@ async function initDatabase() {
         await seedDevices();
         dbReady = true;
         console.log("Base de données connectée");
+        startMqtt();
     } catch (err) {
         console.warn("Base de données indisponible :", err.message || err.original?.code || err.name);
         console.warn("L'API démarre quand même (les routes qui utilisent la base répondent 503)");

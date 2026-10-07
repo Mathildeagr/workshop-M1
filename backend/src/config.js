@@ -52,4 +52,12 @@ module.exports = {
         url: (process.env.VISION_SERVICE_URL || "http://127.0.0.1:5000").replace(/\/$/, ""),
         token: process.env.VISION_SERVICE_TOKEN || "",
     },
+    // Broker Mosquitto. Sans MQTT_USERNAME, le backend démarre sans MQTT (seule la route HTTP reçoit les alertes)
+    mqtt: {
+        url: process.env.MQTT_URL || "mqtt://mosquitto:1883",
+        username: process.env.MQTT_USERNAME || "",
+        password: process.env.MQTT_PASSWORD || "",
+    },
+    // Nœud qui joue les alarmes des émetteurs sans boîtier (vision) : buzzer et LED de ce nœud
+    alarmNode: process.env.ALARM_NODE || "esp01",
 };
