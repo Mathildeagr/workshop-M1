@@ -222,6 +222,14 @@ class Service:
             if folded or purged:
                 log.info("%d minutes repliees, %d mesures brutes purgees", folded, purged)
 
+            # Au premier demarrage la table brute est vide, donc le modele part sans
+            # calibration de saut et ne sait pas reconnaitre une marche brutale.
+            # Des que du brut existe, on reapprend sans attendre l'heure suivante.
+            meta = self.trainer.model.meta
+            if meta is not None and not meta.has_jump_calibration and folded:
+                log.info("brut disponible, reapprentissage pour calibrer les sauts")
+                self._retrain.set()
+
     async def _training(self) -> None:
         while True:
             with contextlib.suppress(TimeoutError):
