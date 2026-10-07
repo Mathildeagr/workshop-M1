@@ -17,6 +17,13 @@ log = logging.getLogger(__name__)
 
 SCHEMA_FILE = Path(__file__).with_name("schema.sql")
 
+# L'ordre nomme exige que chaque parametre existe, meme vide.
+RAW_COLUMNS = (
+    "device_id", "measured_at", "temperature", "humidity", "dew_point",
+    "gas", "gas_ratio", "motion", "presence_count", "tilt", "optic",
+    "uptime_s", "climate_age_ms", "gas_age_ms",
+)
+
 INSERT_RAW = """
 INSERT INTO sensor_readings
     (device_id, measured_at, temperature, humidity, dew_point, gas, gas_ratio,
@@ -191,11 +198,19 @@ class Database:
     # -- ecriture ----------------------------------------------------------
 
     def insert_raw(self, rows: list[dict]) -> int:
+        """Ecrit un lot de mesures brutes.
+
+        Un capteur en panne ou en chauffe ne fournit pas sa valeur, et le contrat
+        du nœud veut une absence plutot qu'un zero. On complete donc a NULL ici,
+        plutot que d'obliger chaque appelant a connaitre la liste des colonnes :
+        c'est cet ordre d'insertion qui les exige, c'est a lui de s'en charger.
+        """
         if not rows:
             return 0
+        complete = [{name: row.get(name) for name in RAW_COLUMNS} for row in rows]
         try:
             with self._cursor() as cur:
-                cur.executemany(INSERT_RAW, rows)
+                cur.executemany(INSERT_RAW, complete)
             return len(rows)
         except psycopg.Error:
             self._drop()

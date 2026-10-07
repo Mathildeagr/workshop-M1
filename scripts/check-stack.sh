@@ -127,6 +127,15 @@ for source in sources:
 queued = data.get('queued_events', 0)
 if queued:
     print(f\"  file       \033[33m{queued} événements en attente d'envoi\033[0m\")
+# Une file d'écriture qui monte sans jamais redescendre veut dire que la base
+# refuse les mesures. Sans ce compteur, le panneau afficherait des mesures reçues
+# et une base vide, sans dire pourquoi.
+pending = data.get('pending_writes', 0)
+if pending:
+    print(f\"  écriture   \033[33m{pending} mesures en attente d'insertion\033[0m\")
+dropped = data.get('dropped_writes', 0)
+if dropped:
+    print(f\"             \033[31m{dropped} mesures perdues, file pleine\033[0m\")
 " <<<"$state"
     printf '\n  Ctrl+C pour arrêter\n'
     sleep 3

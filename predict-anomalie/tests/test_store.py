@@ -171,3 +171,33 @@ def test_un_modele_sur_disque_illisible_ne_bloque_pas_le_demarrage(database, tmp
 
     assert trainer.restore() is False
     assert not trainer.model.ready
+
+
+def test_un_capteur_en_chauffe_n_empeche_pas_l_ecriture(database):
+    """Le MQ-2 ne fournit rien pendant sa chauffe, et le contrat du nœud veut une
+    absence plutôt qu'un zéro. L'ordre nommé exigeait pourtant tous ses
+    paramètres : rien n'était écrit tant que le capteur chauffait."""
+    from predict_anomalie import telemetry
+
+    trame = {
+        "uptime_s": 12,
+        "temperature_c": 22.4,
+        "humidity_pct": 54.1,
+        "dew_point_c": 12.6,
+        "gas_raw": 1024,
+        "gas_warming": True,
+        "gas_ratio": 1.0,
+        "presence": True,
+        "presence_count": 1,
+    }
+    mesure = telemetry.parse(trame)
+    assert "gas" not in mesure and "gas_ratio" not in mesure
+
+    row = {"device_id": "esp01", "measured_at": datetime.now(UTC)} | mesure
+    assert database.insert_raw([row]) == 1
+    assert database.coverage()[2] == 0            # rien de replie encore
+    with database._cursor() as cur:               # noqa: SLF001
+        cur.execute("SELECT gas, gas_ratio, temperature FROM sensor_readings")
+        gas, ratio, temperature = cur.fetchone()
+    assert gas is None and ratio is None
+    assert temperature == pytest.approx(22.4, abs=0.01)
