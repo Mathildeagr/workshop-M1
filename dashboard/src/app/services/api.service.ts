@@ -11,14 +11,21 @@ export interface Metric {
   motion: boolean;
 }
 
-/** Format renvoyé par GET /api/v1/alerts (les plus récentes en premier). */
+/** Format renvoyé par GET /api/v1/alerts et poussé par Socket.io (les plus récentes en premier). */
 export interface Alert {
   id: number;
-  source: string;
+  source: string; // nœud concerné
+  emitter?: string | null; // qui a émis (esp01, predictive, vision) ; null sur les anciennes alertes
   type: string;
   level: 'info' | 'warning' | 'critical';
   value?: unknown;
+  detail?: string | null; // capteur à l'origine, ou explication courte
+  origin?: 'sensor' | 'command' | 'model' | null;
+  meta?: Record<string, unknown> | null; // seq, uptime_s, score, contributions...
+  occurredAt?: string | null; // heure de l'émetteur ; createdAt = réception
   acknowledged: boolean;
+  acknowledgedBy?: number | null;
+  acknowledgedAt?: string | null;
   createdAt: string;
 }
 
@@ -63,13 +70,6 @@ const success = map((): ActionResult => ({ ok: true }));
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
-
-  isApiUp(): Observable<boolean> {
-    return this.http.get(`${API_URL}/health`).pipe(
-      map(() => true),
-      catchError(() => of(false)),
-    );
-  }
 
   getMetrics(limit = 50): Observable<Metric[]> {
     return this.http

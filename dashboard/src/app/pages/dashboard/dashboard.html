@@ -41,10 +41,10 @@
       <span class="live" [class.on]="alertsLive()">{{ alertsLive() ? 'Temps réel' : 'Hors ligne' }}</span>
     </h2>
     @for (a of recentAlerts(); track a.id) {
-      <p class="alert" [class]="a.level" [class.acknowledged]="a.acknowledged">
-        {{ a.createdAt | date: 'HH:mm:ss' }} · {{ a.type }} ({{ a.source }})
-        @if (details(a)) {
-          <small>{{ details(a) }}</small>
+      <p class="alert" [class]="a.level" [class.acknowledged]="a.acknowledged" [title]="a.type">
+        {{ a.time | date: 'HH:mm:ss' }} · {{ a.title }} ({{ a.source }})
+        @if (a.details) {
+          <small>{{ a.details }}</small>
         }
       </p>
     } @empty {

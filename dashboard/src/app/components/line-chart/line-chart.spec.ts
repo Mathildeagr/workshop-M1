@@ -16,13 +16,13 @@ describe('LineChart', () => {
     fixture.componentRef.setInput('values', [20, 21, 22.5]);
     fixture.detectChanges();
     expect(el.querySelector('h3')?.textContent).toContain('Température');
-    expect(el.querySelector('span')?.textContent).toContain('22.5 °C');
+    expect(el.querySelector('.value')?.textContent).toContain('22.5 °C');
   });
 
   it('affiche un tiret sans données', () => {
     fixture.componentRef.setInput('values', []);
     fixture.detectChanges();
-    expect(el.querySelector('span')?.textContent).toContain('–');
+    expect(el.querySelector('.value')?.textContent).toContain('–');
     expect(fixture.componentInstance.points()).toBe('');
   });
 

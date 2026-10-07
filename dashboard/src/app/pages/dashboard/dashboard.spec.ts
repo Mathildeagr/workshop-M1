@@ -56,13 +56,12 @@ describe('Dashboard', () => {
   }
 
   it('affiche le titre', () => {
-    const { el } = setup({ isApiUp: () => of(true), getMetrics: () => of([]), getAlerts: () => of([]) });
+    const { el } = setup({ getMetrics: () => of([]), getAlerts: () => of([]) });
     expect(el.querySelector('h1')?.textContent).toContain('Sentinel-X');
   });
 
   it('affiche le boîtier en ligne avec les données reçues', () => {
     const { app, el } = setup({
-      isApiUp: () => of(true),
       getMetrics: () => of(metrics),
       getAlerts: () => of(alerts),
     });
@@ -79,7 +78,7 @@ describe('Dashboard', () => {
       id: 2, source: 'scan', type: 'mqtt_bruteforce', level: 'critical', acknowledged: false,
       value: { ip: '::1', failures: 5 }, createdAt: new Date(now).toISOString(),
     };
-    const { el } = setup({ isApiUp: () => of(true), getMetrics: () => of([]), getAlerts: () => of([scan]) });
+    const { el } = setup({ getMetrics: () => of([]), getAlerts: () => of([scan]) });
     const alert = el.querySelector('.alert');
     expect(alert?.classList).toContain('critical');
     expect(alert?.textContent).toContain('mqtt_bruteforce (scan)');
@@ -88,32 +87,44 @@ describe('Dashboard', () => {
     expect(TestBed.inject(AlertsService).connect).toHaveBeenCalled();
   });
 
+  it("affiche les alertes au nouveau format : libellé, détail, émetteur et heure de l'émetteur", () => {
+    const predictive: Alert = {
+      id: 3, source: 'esp01', emitter: 'predictive', type: 'env_critical', level: 'critical',
+      value: 0.999, detail: 'temperature +49.3/h', origin: 'model', meta: { score: 0.999 },
+      occurredAt: '2026-10-07T07:05:21.000Z', acknowledged: false, createdAt: '2026-10-07T07:06:00.000Z',
+    };
+    const { el } = setup({ getMetrics: () => of([]), getAlerts: () => of([predictive]) });
+    const alert = el.querySelector('.alert');
+    expect(alert?.textContent).toContain('Environnement critique (esp01)');
+    expect(alert?.getAttribute('title')).toBe('env_critical');
+    expect(alert?.querySelector('small')?.textContent).toContain('temperature +49.3/h · 0.999 · via predictive');
+    expect(alert?.textContent).toContain(new Date(predictive.occurredAt!).toTimeString().slice(0, 8));
+  });
+
   it('affiche le boîtier hors ligne sans mesure récente', () => {
     const old = [{ ...metrics[0], ts: now - 60_000 }];
     const { app, el } = setup({
-      isApiUp: () => of(false),
       getMetrics: () => of(old),
       getAlerts: () => of([]),
     });
     expect(app.online()).toBe(false);
-    expect(el.querySelector('.badge')?.textContent).toContain('injoignable');
     expect(el.querySelector('.status')?.textContent).toContain('Aucune alerte');
   });
 
   it('affiche la caméra Sentinel et cache les visages au rôle lecteur', () => {
-    const { el } = setup({ isApiUp: () => of(true), getMetrics: () => of([]), getAlerts: () => of([]) });
+    const { el } = setup({ getMetrics: () => of([]), getAlerts: () => of([]) });
     expect(el.querySelector('app-vision-feed')?.textContent).toContain('Service vision injoignable');
     expect(el.querySelector('app-faces-manager')).toBeNull();
   });
 
   it('affiche la gestion des visages aux superviseurs', () => {
-    const empty = { isApiUp: () => of(true), getMetrics: () => of([]), getAlerts: () => of([]) };
+    const empty = { getMetrics: () => of([]), getAlerts: () => of([]) };
     const { el } = setup(empty, 'superviseur');
     expect(el.querySelector('app-faces-manager')).not.toBeNull();
   });
 
   it('déconnecte et renvoie vers /login', () => {
-    const { el } = setup({ isApiUp: () => of(true), getMetrics: () => of([]), getAlerts: () => of([]) });
+    const { el } = setup({ getMetrics: () => of([]), getAlerts: () => of([]) });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     [...el.querySelectorAll('button')].find((b) => b.textContent?.includes('Déconnexion'))?.click();
     expect(TestBed.inject(AuthService).logout).toHaveBeenCalled();
