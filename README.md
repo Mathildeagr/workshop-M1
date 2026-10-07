@@ -61,6 +61,42 @@ docker compose ps        # tous les services doivent être "Up" (healthy pour da
 
 Depuis une autre machine de la table (ESP8266, PC), remplacer `localhost` par l'IP du PC Serveur Local.
 
+### Vérifier que tout va bien
+
+```bash
+./scripts/check-stack.sh            # services, comptes du broker, base, brique
+./scripts/check-stack.sh --watch    # panneau rafraîchi : les mesures qui arrivent
+./scripts/check-stack.sh --bus      # tout ce qui circule sur le broker, brut
+```
+
+Le panneau de veille montre le nombre de mesures en base et leur cadence, la
+dernière relevée, le silence depuis la précédente, l'état du modèle et celui de
+chaque nœud. C'est ce qu'il faut ouvrir en allumant le boîtier.
+
+### Dépannage
+
+**`password authentication failed for user "sentinel"`** après avoir régénéré les
+secrets. PostgreSQL n'applique `POSTGRES_PASSWORD` qu'à l'initialisation d'un
+volume vierge : une base déjà créée garde son ancien mot de passe. Le réaligner
+sans rien perdre :
+
+```bash
+printf "ALTER USER sentinel PASSWORD '$(grep ^POSTGRES_PASSWORD= .env | cut -d= -f2)';" \
+  | docker compose exec -T database psql -U sentinel -d postgres
+```
+
+Puis `docker compose restart backend predict-anomalie`. L'alternative,
+`docker compose down -v`, repart d'une base vierge et **supprime les données**.
+
+**`pas de modèle : 0 minutes exploitables`**. La brique d'analyse a besoin de deux
+heures de mesures avant de pouvoir apprendre. Pour ne pas attendre :
+
+```bash
+./scripts/check-stack.sh --seed 30
+```
+
+Ces données sont **fabriquées** et doivent être annoncées comme telles.
+
 ### Commandes utiles
 
 ```bash
