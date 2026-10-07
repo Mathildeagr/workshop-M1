@@ -3,10 +3,14 @@
 // Tables issues de la console de reglage. freq 0 = silence. Le dernier silence
 // d'une table est l'ecart entre deux cycles, joue par le rebouclage.
 
-static const Step INTRUSION_SUSPECTED[] = {{400,400},{400,100},{400,200},{0,200}};
-static const Step INTRUSION_CONFIRMED[] = {{900,400},{900,100},{900,200}};
-static const Step INTRUSION_ESCALATED[] = {{1000,300},{1000,75},{1000,100}};
-static const Step INTRUSION_CLEARED[]   = {{900,180},{0,40},{450,360}};
+// Sirene : une note tenue dont le volume monte puis redescend. L'urgence se lit
+// dans la vitesse du cycle, jamais dans la hauteur — sept secondes et demie pour
+// le doute, deux secondes pour l'interdit. Les hauteurs sont celles reglees a la
+// console ; pour une sirene plus grave, il n'y a que ces trois nombres a changer.
+static const Step INTRUSION_SUSPECTED[]  = {{400,3000,10,100},{400,3000,100,10},{0,1500}};
+static const Step INTRUSION_CONFIRMED[]  = {{900,2000,20,100},{900,2000,100,20},{0,800}};
+static const Step INTRUSION_ESCALATED[]  = {{1000,1000,40,100},{1000,1000,100,40}};
+static const Step INTRUSION_CLEARED[]    = {{900,180},{0,40},{450,360,100,0}};
 
 static const Step TAMPER_SUSPECTED[] = {{2000,80},{0,2000},{1200,80},{0,2000},{2000,80},{0,2000},{1200,80},{0,2000}};
 static const Step TAMPER_CONFIRMED[] = {{2000,80},{0,80},{1200,80},{0,80},{2000,80},{0,80},{1200,80},{0,80}};
@@ -55,11 +59,38 @@ static uint32_t    s_stepStart = 0;
 static const char *s_label     = nullptr;
 static uint8_t     s_priority  = 255;
 static uint8_t     s_family    = FAM_COUNT;
+static uint8_t     s_volume    = 0;
+
+// Resolution du rapport cyclique. 255 suffit largement pour cent niveaux.
+static const uint16_t PWM_RANGE = 255;
+
+// tone() sort un carre a rapport cyclique fixe : aucun volume possible. En
+// pilotant la broche en modulation de largeur, l'energie envoyee au piezo suit
+// le rapport cyclique, et un carre donne son maximum a cinquante pour cent.
+static void emit(uint16_t freq, uint8_t volume) {
+  if (freq == 0 || volume == 0) {
+    analogWrite(s_pin, 0);
+    digitalWrite(s_pin, LOW);
+    s_volume = 0;
+    return;
+  }
+  analogWriteFreq(freq);
+  analogWrite(s_pin, (uint32_t)PWM_RANGE * volume / 200u);
+  s_volume = volume;
+}
+
+// Volume du pas courant a cet instant, interpole quand il varie.
+static uint8_t stepVolume(const Step &st, uint32_t elapsed) {
+  if (st.vol_from == st.vol_to) return st.vol_from;
+  const uint32_t d = st.dur_ms ? st.dur_ms : 1;
+  const uint32_t t = elapsed > d ? d : elapsed;
+  return (uint8_t)((int32_t)st.vol_from
+                   + ((int32_t)st.vol_to - (int32_t)st.vol_from) * (int32_t)t / (int32_t)d);
+}
 
 static void applyStep() {
-  const uint16_t f = s_steps[s_idx].freq_hz;
-  if (f > 0) tone(s_pin, f);
-  else       noTone(s_pin);
+  const Step &st = s_steps[s_idx];
+  emit(st.freq_hz, stepVolume(st, 0));
 }
 
 void alarmPlayTable(const Step *steps, uint8_t len, bool loop,
@@ -85,7 +116,8 @@ static void startAlert(Family f, State s) {
 void alarmBegin(uint8_t pin) {
   s_pin = pin;
   pinMode(s_pin, OUTPUT);
-  noTone(s_pin);
+  analogWriteRange(PWM_RANGE);
+  analogWrite(s_pin, 0);
   digitalWrite(s_pin, LOW);
   s_active = false;
   s_label  = nullptr;
@@ -98,7 +130,7 @@ void alarmStop() {
   s_family   = FAM_COUNT;
   s_priority = 255;
   if (s_pin != 255) {
-    noTone(s_pin);
+    emit(0, 0);
     digitalWrite(s_pin, LOW);
   }
 }
@@ -122,11 +154,21 @@ void alarmUpdate() {
   if (!s_active) return;
 
   const uint32_t now = millis();
-  if (now - s_stepStart < s_steps[s_idx].dur_ms) return;
+  const Step &st = s_steps[s_idx];
+
+  if (now - s_stepStart < st.dur_ms) {
+    // Enveloppe en cours : on ne reecrit la sortie que lorsque le volume change
+    // vraiment, soit cent fois par rampe au maximum.
+    if (st.vol_from != st.vol_to && st.freq_hz > 0) {
+      const uint8_t v = stepVolume(st, now - s_stepStart);
+      if (v != s_volume) emit(st.freq_hz, v);
+    }
+    return;
+  }
 
   // On avance du pas exact pour ne pas accumuler le retard de la boucle, mais
   // on se resynchronise si elle a vraiment decroche.
-  s_stepStart += s_steps[s_idx].dur_ms;
+  s_stepStart += st.dur_ms;
   if (now - s_stepStart > 500) s_stepStart = now;
 
   s_idx++;
