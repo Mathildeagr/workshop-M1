@@ -14,11 +14,6 @@ interface Session {
   user: User;
 }
 
-interface LoginResponse {
-  token: string;
-  user: User;
-}
-
 export type LoginResult = 'ok' | 'invalid' | 'rate_limited' | 'unavailable';
 
 const SESSION_KEY = 'sentinel_session';
@@ -59,7 +54,7 @@ export class AuthService {
   }
 
   login(username: string, password: string): Observable<LoginResult> {
-    return this.http.post<LoginResponse>(`${API_URL}/auth/login`, { username, password }).pipe(
+    return this.http.post<Session>(`${API_URL}/auth/login`, { username, password }).pipe(
       map(({ token, user }) => {
         this.setSession({ token, user });
         return 'ok' as const;

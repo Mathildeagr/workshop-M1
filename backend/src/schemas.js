@@ -1,4 +1,5 @@
 const { z } = require("zod");
+const { PLAYABLE } = require("./events/rules");
 
 // Identifiants courts et sans caractères spéciaux : pas d'injection possible dans les logs ou le dashboard
 const identifier = z.string().trim().min(1).max(50).regex(/^[a-zA-Z0-9_-]+$/, "Caractères autorisés : lettres, chiffres, _ et -");
@@ -75,7 +76,45 @@ const idParamSchema = z.object({
     id: z.coerce.number().int().positive(),
 });
 
+// Commande manuelle du superviseur vers un nœud (briefing §4) :
+// jouer une séquence par son nom, ou couper / rétablir le son et la lumière
+const commandSchema = z.discriminatedUnion("event", [
+    z.object({
+        node: identifier,
+        event: z.enum([...PLAYABLE]),
+    }).strict(),
+    z.object({
+        node: identifier,
+        event: z.enum(["activate", "deactivate"]),
+        target: z.enum(["intrusion", "sabotage", "environnement", "tout"]).default("tout"),
+        signal: z.enum(["sonore", "lumineux", "tous"]).default("tous"),
+    }).strict(),
+]);
+
+// Réglages de predict-anomalie (briefing §9.5) : au moins un des deux
+const predictiveConfigSchema = z.object({
+    sensitivity: z.enum(["low", "medium", "high"]).optional(),
+    window_days: z.number().positive().max(3650).optional(),   // la brique accepte tout, 10 ans suffit
+}).strict().refine((o) => o.sensitivity || o.window_days, "sensitivity ou window_days requis");
+
+// Mesures : un nœud, une période (heures) et un nombre de points
+const readingsQuerySchema = z.object({
+    node: identifier.default("esp01"),
+    hours: z.coerce.number().positive().max(24 * 365).default(24),
+    limit: z.coerce.number().int().min(1).max(2000).default(1440),
+});
+
+const metricsQuerySchema = z.object({
+    node: identifier.default("esp01"),
+    limit: z.coerce.number().int().min(1).max(500).default(50),
+});
+
+const commandQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    node: identifier.optional(),
+});
+
 module.exports = {
     loginSchema, createUserSchema, alertSchema, alertQuerySchema, idParamSchema, faceNameSchema, faceStatusSchema,
-    faceCaptureSchema,
+    faceCaptureSchema, commandSchema, commandQuerySchema, predictiveConfigSchema, readingsQuerySchema, metricsQuerySchema,
 };

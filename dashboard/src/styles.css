@@ -45,14 +45,6 @@ h2 {
   color: var(--text);
 }
 
-/* Petits libellés façon légende */
-.label {
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
 .card {
   position: relative;
   background: var(--panel);

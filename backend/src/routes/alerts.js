@@ -1,33 +1,33 @@
 const express = require("express");
-const { Alert, Device } = require("../models");
+const { Alert } = require("../models");
 const { requireUser, requireRole, requireDevice } = require("../middleware/auth");
 const validate = require("../middleware/validate");
 const { alertSchema, alertQuerySchema, idParamSchema } = require("../schemas");
-const { toAlertRecord, formatAlert, AlertRecordError } = require("../events/alertRecord");
+const { formatAlert } = require("../events/alertRecord");
 
-module.exports = function alertsRouter(io) {
+/**
+ * @param {object} deps  { io, ingest } : ingest est le pipeline partagé avec l'abonné MQTT (events/ingest.js)
+ */
+module.exports = function alertsRouter({ io, ingest }) {
     const router = express.Router();
 
-    // Route obligatoire du sujet : réservée aux appareils (ESP8266, scripts IA)
+    // Route obligatoire du sujet : réservée aux appareils (ESP8266, scripts IA).
+    // Même traitement qu'un événement reçu sur le bus MQTT.
     router.post("/", requireDevice, validate(alertSchema), async (req, res) => {
-        let record;
+        let result;
         try {
-            record = toAlertRecord(req.body, req.device.id);
+            result = await ingest(req.body, req.device.id, { ip: req.ip });
         } catch (err) {
-            if (err instanceof AlertRecordError) return res.status(err.status).json({ error: err.message });
+            if (err.status) return res.status(err.status).json({ error: err.message });
             throw err;
         }
-        // Le nœud concerné doit exister (clé étrangère, et pas d'alerte sur un boîtier inventé)
-        if (record.deviceId !== req.device.id && !(await Device.findByPk(record.deviceId))) {
-            return res.status(400).json({ error: `Source inconnue : ${record.deviceId}` });
+        if (result.kind === "ack") {
+            return res.status(202).json({ acknowledged: true, command: result.command?.id ?? null });
         }
-
-        const alert = await Alert.create(record);
-        await Device.update({ lastSeen: new Date(), ip: req.ip }, { where: { id: req.device.id } });
-
-        const payload = formatAlert(alert);
-        io.emit("alert", payload);          // push instantané vers le dashboard
-        res.status(201).json(payload);
+        if (result.kind === "duplicate") {
+            return res.status(200).json({ duplicate: true });   // déjà reçu par le bus : rien de plus à faire
+        }
+        res.status(201).json({ ...result.alert, command: result.command });
     });
 
     // ?limit=50&acknowledged=false : les plus récentes d'abord

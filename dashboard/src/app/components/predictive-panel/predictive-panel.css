@@ -1,0 +1,35 @@
+.facts { list-style: none; margin: 0 0 16px; padding: 0; font-size: 12px; }
+.facts li { display: grid; gap: 3px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.facts li:last-child { border-bottom: none; }
+.facts strong { font-size: 10px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+.stage { font-family: var(--font-display); font-size: 20px; }
+.stage.normal { color: var(--ok); }
+.stage.drift { color: var(--blue); }
+.stage.anomaly { color: #e0b04f; }
+.stage.critical { color: var(--danger-text); }
+
+/* Historique bien plus court que la fenêtre demandée : la référence n'est pas celle que l'opérateur croit */
+.warn { color: #e0b04f; }
+
+.settings { display: grid; gap: 8px; margin-top: 16px; }
+.buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+label { display: grid; gap: 6px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+input,
+select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--input-bg);
+  color: var(--input-text);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.muted { color: var(--muted); }
+.msg { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.msg.ok { color: var(--ok); }
+.msg.error { color: var(--danger-text); }

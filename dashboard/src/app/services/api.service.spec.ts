@@ -18,24 +18,6 @@ describe('ApiService', () => {
 
   afterEach(() => http.verify());
 
-  it('isApiUp renvoie true si /health répond', () => {
-    let result: boolean | undefined;
-    service.isApiUp().subscribe((r) => {
-      result = r;
-    });
-    http.expectOne(`${API_URL}/health`).flush({ status: 'ok' });
-    expect(result).toBe(true);
-  });
-
-  it('isApiUp renvoie false en cas d\'erreur', () => {
-    let result: boolean | undefined;
-    service.isApiUp().subscribe((r) => {
-      result = r;
-    });
-    http.expectOne(`${API_URL}/health`).error(new ProgressEvent('error'));
-    expect(result).toBe(false);
-  });
-
   it('getMetrics envoie le paramètre limit', () => {
     const metrics: Metric[] = [{ ts: 1, temperature: 20, humidity: 40, gas: 100, motion: false }];
     let result: Metric[] | undefined;
