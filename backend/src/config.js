@@ -60,6 +60,8 @@ module.exports = {
     },
     // Nœud qui joue les alarmes des émetteurs sans boîtier (vision) : buzzer et LED de ce nœud
     alarmNode: process.env.ALARM_NODE || "esp01",
+    // Routes de lecture de predict-anomalie (réseau interne, jamais exposées directement)
+    predictUrl: (process.env.PREDICT_URL || "http://predict-anomalie:8000").replace(/\/$/, ""),
     // Délai d'attente de l'accusé d'une commande avant nouvelle tentative (briefing §5 : 2 s suffisent)
     commandAckTimeoutMs: Number(process.env.COMMAND_ACK_TIMEOUT_MS) || 2000,
 };

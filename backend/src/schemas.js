@@ -91,6 +91,24 @@ const commandSchema = z.discriminatedUnion("event", [
     }).strict(),
 ]);
 
+// Réglages de predict-anomalie (briefing §9.5) : au moins un des deux
+const predictiveConfigSchema = z.object({
+    sensitivity: z.enum(["low", "medium", "high"]).optional(),
+    window_days: z.number().positive().max(3650).optional(),   // la brique accepte tout, 10 ans suffit
+}).strict().refine((o) => o.sensitivity || o.window_days, "sensitivity ou window_days requis");
+
+// Mesures : un nœud, une période (heures) et un nombre de points
+const readingsQuerySchema = z.object({
+    node: identifier.default("esp01"),
+    hours: z.coerce.number().positive().max(24 * 365).default(24),
+    limit: z.coerce.number().int().min(1).max(2000).default(1440),
+});
+
+const metricsQuerySchema = z.object({
+    node: identifier.default("esp01"),
+    limit: z.coerce.number().int().min(1).max(500).default(50),
+});
+
 const commandQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(200).default(50),
     node: identifier.optional(),
@@ -98,5 +116,5 @@ const commandQuerySchema = z.object({
 
 module.exports = {
     loginSchema, createUserSchema, alertSchema, alertQuerySchema, idParamSchema, faceNameSchema, faceStatusSchema,
-    faceCaptureSchema, commandSchema, commandQuerySchema,
+    faceCaptureSchema, commandSchema, commandQuerySchema, predictiveConfigSchema, readingsQuerySchema, metricsQuerySchema,
 };

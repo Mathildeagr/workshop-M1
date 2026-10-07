@@ -14,12 +14,24 @@ class IngestError extends Error {
 }
 
 /**
- * @param {object} deps  { Alert, Device, io, commands, signalSettings, raiseAlert, alarmNode }
+ * @param {object} deps  { Alert, Device, io, commands, signalSettings, raiseAlert, alarmNode, estimateUptime }
+ *   estimateUptime(node) : uptime_s actuel estimé du nœud (registre des nœuds), ou null
  */
 function createIngest({
-    Alert, Device, io, commands, signalSettings, raiseAlert, alarmNode,
-    isDuplicate = createDedupe(), checkSequence = createSequenceTracker(),
+    Alert, Device, io, commands, signalSettings, raiseAlert, alarmNode, estimateUptime = () => null,
+    isDuplicate = createDedupe(), checkSequence = createSequenceTracker(), now = Date.now,
 }) {
+    // Le nœud ne date pas ses messages (§6) : un événement rejoué après une coupure décrit un fait passé.
+    // Instant réel ≈ réception − (uptime actuel − uptime du message). Seuil de 5 s pour ignorer la latence normale.
+    function pastOccurrence(record) {
+        const uptime = record.meta?.uptime_s;
+        if (record.occurredAt || uptime === undefined) return record.occurredAt;
+        const current = estimateUptime(record.emitter);
+        if (current === null || current < uptime) return null;   // inconnu, ou message d'un boot plus récent
+        const lagSeconds = current - uptime;
+        return lagSeconds > 5 ? new Date(now() - lagSeconds * 1000) : null;
+    }
+
     /** Trou dans seq : des événements du nœud ne sont jamais arrivés (§3.1). Signalé, sans bloquer l'événement. */
     async function reportGap(node, gap) {
         console.warn(`[sequence] ${node} : ${gap.missing} événement(s) perdu(s) (seq ${gap.from} à ${gap.to})`);
@@ -61,6 +73,7 @@ function createIngest({
         if (isDuplicate(record)) {
             return { kind: "duplicate" };
         }
+        record.occurredAt = pastOccurrence(record);
 
         // 4. Enregistrement et diffusion
         const alert = await Alert.create(record);

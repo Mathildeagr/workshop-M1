@@ -59,7 +59,19 @@ function createNodeRegistry({ io, raiseAlert, now = Date.now }) {
     function handleTelemetry(id, body) {
         const node = get(id);
         node.lastTelemetryAt = now();
+        if (Number.isInteger(body.uptime_s)) node.lastUptime = body.uptime_s;
         io.emit("telemetry", { source: id, receivedAt: new Date(node.lastTelemetryAt).toISOString(), ...pickTelemetry(body) });
+    }
+
+    /**
+     * uptime_s actuel estimé du nœud : dernier uptime reçu + temps écoulé depuis.
+     * Null si la télémétrie est trop ancienne pour être fiable (nœud muet depuis plus d'une minute).
+     */
+    function estimateUptime(id, maxAgeMs = 60_000) {
+        const node = nodes.get(id);
+        if (!node?.lastTelemetryAt || node.lastUptime === undefined) return null;
+        const age = now() - node.lastTelemetryAt;
+        return age > maxAgeMs ? null : node.lastUptime + age / 1000;
     }
 
     function status(id) {
@@ -75,7 +87,7 @@ function createNodeRegistry({ io, raiseAlert, now = Date.now }) {
         }));
     }
 
-    return { handleStatus, handleTelemetry, status, list };
+    return { handleStatus, handleTelemetry, estimateUptime, status, list };
 }
 
 module.exports = { createNodeRegistry, pickTelemetry };

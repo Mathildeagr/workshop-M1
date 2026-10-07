@@ -2,19 +2,25 @@
 const mqtt = require("mqtt");
 const { alertSchema } = require("../schemas");
 
-const TOPIC_RE = /^sentinel\/([a-zA-Z0-9_-]{1,50})\/(events|status|telemetry)$/;
+const TOPIC_RE = /^sentinel\/([a-zA-Z0-9_-]{1,50})\/(events|status|telemetry|score|config)$/;
 const MAX_PAYLOAD = 4096;   // le nœud envoie au plus 512 octets ; marge pour predict-anomalie
+const PREDICTIVE = "predictive";
 
 const SUBSCRIPTIONS = {
     "sentinel/+/events": { qos: 1 },      // QoS 1 : le broker garde les événements pendant un redémarrage du backend
     "sentinel/+/status": { qos: 1 },
     "sentinel/+/telemetry": { qos: 0 },   // remplacée toutes les 2 s : pas d'accusé (§2)
+    "sentinel/predictive/score": { qos: 0 },    // score continu, toutes les 5 s (§9.7)
+    "sentinel/predictive/config": { qos: 1 },   // configuration effective, retenue (§9.6)
 };
 
 /** sentinel/esp01/events -> { node: "esp01", kind: "events" }, ou null pour un topic hors contrat */
 function parseTopic(topic) {
     const m = TOPIC_RE.exec(topic);
-    return m ? { node: m[1], kind: m[2] } : null;
+    if (!m) return null;
+    // score et config n'existent que pour la brique predict-anomalie
+    if ((m[2] === "score" || m[2] === "config") && m[1] !== PREDICTIVE) return null;
+    return { node: m[1], kind: m[2] };
 }
 
 /** Trame "events" du bus -> corps attendu par alertSchema (le bus dit "event", l'API dit "type", §9.3). */
@@ -25,9 +31,9 @@ function toAlertBody(json) {
 }
 
 /**
- * @param {object} opts  { url, username, password, ingest, registry }
+ * @param {object} opts  { url, username, password, ingest, registry, predictive }
  */
-function connectMqtt({ url, username, password, ingest, registry }) {
+function connectMqtt({ url, username, password, ingest, registry, predictive }) {
     const client = mqtt.connect(url, {
         username,
         password,
@@ -65,10 +71,10 @@ function connectMqtt({ url, username, password, ingest, registry }) {
             return;
         }
 
-        if (route.kind === "telemetry") {
-            if (json && typeof json === "object") registry.handleTelemetry(route.node, json);
-            return;
-        }
+        if (!json || typeof json !== "object" || Array.isArray(json)) return;
+        if (route.kind === "telemetry") return registry.handleTelemetry(route.node, json);
+        if (route.kind === "score") return predictive.handleScore(json);
+        if (route.kind === "config") return predictive.handleConfig(json);
 
         // events : même validation que la route HTTP ; l'émetteur vient du topic, jamais du corps (§3.1)
         const parsed = alertSchema.safeParse(toAlertBody(json));
