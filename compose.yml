@@ -3,7 +3,7 @@ name: sentinel-x
 services:
 
   traefik:
-    image: traefik:v3.3
+    image: traefik:v3.6
     container_name: sentinel-traefik
     restart: unless-stopped
     command:
