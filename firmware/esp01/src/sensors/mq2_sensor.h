@@ -19,7 +19,7 @@ public:
   uint8_t  failStreak() const override { return _failStreak; }
 
 private:
-  uint16_t sampleAveraged() const;
+  uint16_t sampleMedian() const;
 
   uint8_t  _pin;
   uint32_t _warmupMs;
@@ -34,7 +34,10 @@ private:
   uint32_t _baselineSum;
   uint16_t _baselineCount;
 
-  static const uint8_t  SAMPLES_PER_READ = 8;
+  // Echantillons espaces dans le temps, puis mediane. Un nombre impair pour que
+  // la mediane soit une valeur relevee et non une moyenne de deux.
+  static const uint8_t  SAMPLES_PER_READ  = 9;
+  static const uint8_t  SAMPLE_SPACING_MS = 2;
   static const uint16_t BASELINE_SAMPLES = 30;
   static const uint16_t RAW_MAX          = 1023;
 };
