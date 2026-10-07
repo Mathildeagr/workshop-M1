@@ -50,6 +50,88 @@ export interface VisionStatus {
   at: number | null;
 }
 
+// --- Nœuds, commandes, predict-anomalie (intégration esp01 / predict-anomalie) ---
+
+export type NodeStatus = 'online' | 'offline' | 'unknown';
+
+/** GET /api/v1/nodes et Socket.io "node_status". */
+export interface NodeState {
+  id: string;
+  status: NodeStatus;
+  statusAt: string | null;
+  lastTelemetryAt: string | null;
+}
+
+/** Socket.io "telemetry" : trame du nœud relayée par le backend (champs absents = capteur en panne). */
+export interface Telemetry {
+  source: string;
+  receivedAt: string;
+  uptime_s?: number;
+  temperature_c?: number;
+  humidity_pct?: number;
+  dew_point_c?: number;
+  gas_raw?: number;
+  gas_ratio?: number;
+  gas_warming?: boolean;
+  presence?: boolean;
+  presence_count?: number;
+  tilt?: 'repos' | 'secousse' | 'sabotage';
+  optic?: 'repos' | 'secousse' | 'sabotage';
+}
+
+export type CommandStatus = 'pending' | 'sent' | 'retrying' | 'acked' | 'failed';
+
+/** Commande envoyée à un nœud : Socket.io "command_status", POST et GET /api/v1/commands. */
+export interface CommandView {
+  id: string;
+  node: string;
+  event: string;
+  trigger: 'rule' | 'manual' | 'replay';
+  status: CommandStatus;
+  attempts: number;
+  maxAttempts?: number;
+  reason?: string | null;
+  failure?: 'node_offline' | 'no_ack' | 'broker_down' | null;
+  latencyMs?: number | null;
+  createdAt?: string;
+  appliedAtNextBoot?: boolean;
+}
+
+/** Commande manuelle du superviseur (contrôle réactif). */
+export type CommandRequest =
+  | { node: string; event: string }
+  | { node: string; event: 'activate' | 'deactivate'; target: SignalTarget; signal: SignalKind };
+export type SignalTarget = 'intrusion' | 'sabotage' | 'environnement' | 'tout';
+export type SignalKind = 'sonore' | 'lumineux' | 'tous';
+
+/** Socket.io "seq_gap" : événements du nœud jamais reçus. */
+export interface SeqGap {
+  node: string;
+  from: number;
+  to: number;
+  missing: number;
+}
+
+export type Sensitivity = 'low' | 'medium' | 'high';
+
+/** Configuration effective de predict-anomalie (topic retenu, GET /predictive/config). */
+export interface PredictiveConfig {
+  sensitivity?: Sensitivity;
+  window_days?: number;      // fenêtre demandée
+  effective_days?: number;   // fenêtre réellement couverte par l'historique
+  receivedAt?: string;
+}
+
+/** Socket.io "score" : score continu du détecteur, toutes les 5 s par nœud. */
+export interface Score {
+  source: string;
+  ts?: string;
+  stage?: 'normal' | 'drift' | 'anomaly' | 'critical' | string;
+  score?: number;
+  magnitude?: number;
+  velocity?: number;
+}
+
 /** Résultat d'une action : en cas d'échec, message d'erreur renvoyé par l'API. */
 export interface ActionResult {
   ok: boolean;
@@ -79,6 +161,62 @@ export class ApiService {
 
   getAlerts(): Observable<Alert[]> {
     return this.http.get<Alert[]>(`${API_URL}/alerts`).pipe(catchError(() => of([])));
+  }
+
+  /** Le superviseur signale qu'il a pris l'alerte en compte (admin, superviseur). */
+  acknowledgeAlert(id: number): Observable<ActionResult> {
+    return this.http
+      .patch(`${API_URL}/alerts/${id}/ack`, {})
+      .pipe(success, catchError((err) => failure(err, "Échec de l'acquittement")));
+  }
+
+  // --- Nœuds et commandes ---
+
+  getNodes(): Observable<NodeState[]> {
+    return this.http.get<{ nodes: NodeState[] }>(`${API_URL}/nodes`).pipe(
+      map(({ nodes }) => nodes),
+      catchError(() => of([])),
+    );
+  }
+
+  getCommands(limit = 15): Observable<CommandView[]> {
+    return this.http
+      .get<CommandView[]>(`${API_URL}/commands`, { params: { limit } })
+      .pipe(catchError(() => of([])));
+  }
+
+  /** Renvoie la commande créée (même en échec : 503 si le nœud est hors ligne), ou null si refusée. */
+  sendCommand(request: CommandRequest): Observable<{ command: CommandView | null; error?: string }> {
+    return this.http.post<CommandView>(`${API_URL}/commands`, request).pipe(
+      map((command) => ({ command })),
+      catchError((err: unknown) => {
+        const body = err instanceof HttpErrorResponse ? err.error : null;
+        if (body?.id) return of({ command: body as CommandView });   // 503 : commande tracée mais en échec
+        return of({ command: null, error: typeof body?.error === 'string' ? body.error : 'Commande refusée' });
+      }),
+    );
+  }
+
+  // --- predict-anomalie ---
+
+  getPredictiveConfig(): Observable<PredictiveConfig | null> {
+    return this.http.get<PredictiveConfig>(`${API_URL}/predictive/config`).pipe(catchError(() => of(null)));
+  }
+
+  getScores(): Observable<Score[]> {
+    return this.http.get<Score[]>(`${API_URL}/predictive/scores`).pipe(catchError(() => of([])));
+  }
+
+  setPredictiveConfig(config: { sensitivity?: Sensitivity; window_days?: number }): Observable<ActionResult> {
+    return this.http
+      .post(`${API_URL}/predictive/config`, config)
+      .pipe(success, catchError((err) => failure(err, 'Réglage refusé')));
+  }
+
+  retrain(): Observable<ActionResult> {
+    return this.http
+      .post(`${API_URL}/predictive/retrain`, {})
+      .pipe(success, catchError((err) => failure(err, 'Réapprentissage refusé')));
   }
 
   // --- Vision (service ai-vision via le backend) ---

@@ -14,26 +14,51 @@
     <h2>Statut du boîtier</h2>
     <ul class="rows">
       <li>
-        <span class="dot" [class.ok]="online()"></span>
+        <span class="dot" [class.ok]="online()" [class.alarm]="!online()"></span>
         <div>
-          <strong>Boîtier</strong>
+          <strong>Boîtier {{ node }}</strong>
           <small [class.on]="online()">{{ online() ? 'En ligne' : 'Hors ligne' }}</small>
         </div>
       </li>
       <li>
-        <span class="dot" [class.on]="last()?.motion"></span>
+        <span class="dot" [class.on]="!silent()" [class.alarm]="silent() && measureAge() !== null"></span>
+        <div>
+          <strong>Dernière mesure</strong>
+          <!-- Toujours affichée : un « il y a 2 s » discret qui devient « muet depuis 47 s » se comprend mieux (§10.1) -->
+          @if (measureAge() === null) {
+            <small>–</small>
+          } @else if (silent()) {
+            <small class="silent">Muet depuis {{ measureAge() }} s</small>
+          } @else {
+            <small>il y a {{ measureAge() }} s</small>
+          }
+        </div>
+      </li>
+      <li>
+        <span class="dot" [class.on]="presence()"></span>
         <div>
           <strong>Présence (PIR)</strong>
-          <small [class.on]="last()?.motion">{{ last()?.motion ? 'Détectée' : 'Aucune' }}</small>
+          <small [class.on]="presence()">{{ presence() ? 'Détectée' : 'Aucune' }}</small>
         </div>
       </li>
       <li>
         <span class="dot idle"></span>
         <div>
-          <strong>Dernière mesure</strong>
-          <small>{{ last() ? (last()!.ts | date: 'HH:mm:ss') : '–' }}</small>
+          <strong>Inclinaison · Objectif</strong>
+          <small>{{ tilt() }} · {{ optic() }}</small>
         </div>
       </li>
+      @if (missingEvents() > 0) {
+        <li>
+          <span class="dot alarm"></span>
+          <div>
+            <strong>Événements perdus (seq)</strong>
+            <small class="silent" [title]="'Dernier trou : seq ' + lastGap()?.from + ' à ' + lastGap()?.to">
+              {{ missingEvents() }} depuis l'ouverture
+            </small>
+          </div>
+        </li>
+      }
     </ul>
 
     <h2>
@@ -43,8 +68,14 @@
     @for (a of recentAlerts(); track a.id) {
       <p class="alert" [class]="a.level" [class.acknowledged]="a.acknowledged" [title]="a.type">
         {{ a.time | date: 'HH:mm:ss' }} · {{ a.title }} ({{ a.source }})
+        @if (canAcknowledge() && !a.acknowledged) {
+          <button class="ack" (click)="acknowledge(a)" title="Marquer comme prise en compte">Vu</button>
+        }
         @if (a.details) {
           <small>{{ a.details }}</small>
+        }
+        @if (a.reason) {
+          <small class="reason">Pourquoi : {{ a.reason }}</small>
         }
       </p>
     } @empty {
@@ -59,9 +90,13 @@
       <app-faces-manager />
     }
   </section>
+
   <div class="environment-infos">
     <section class="card"><app-line-chart label="Température" unit="°C" color="#a8559f" [values]="temperature()" /></section>
     <section class="card"><app-line-chart label="Humidité" unit="%" color="#9fcfdf" [values]="humidity()" /></section>
     <section class="card"><app-line-chart label="Gaz (MQ-2)" color="#4f9d86" [values]="gas()" /></section>
   </div>
+
+  <section class="card"><app-control-panel [node]="node" /></section>
+  <section class="card"><app-predictive-panel [node]="node" /></section>
 </main>

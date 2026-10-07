@@ -1,7 +1,16 @@
 import { Injectable, InjectionToken, inject, signal } from '@angular/core';
 import { io, type Socket } from 'socket.io-client';
-import { ApiService, type Alert } from './api.service';
+import {
+  ApiService,
+  type Alert,
+  type CommandView,
+  type PredictiveConfig,
+  type Score,
+  type SeqGap,
+  type Telemetry,
+} from './api.service';
 import { AuthService } from './auth.service';
+import { LiveStateService } from './live-state.service';
 
 const MAX_ALERTS = 50;
 
@@ -20,6 +29,7 @@ export class AlertsService {
   private api = inject(ApiService);
   private auth = inject(AuthService);
   private createSocket = inject(SOCKET_FACTORY);
+  private liveState = inject(LiveStateService);
   private socket: Socket | null = null;
   private list = signal<Alert[]>([]);
 
@@ -37,7 +47,14 @@ export class AlertsService {
     socket.on('disconnect', () => this.live.set(false));
     socket.on('alert', (alert: Alert) => this.add(alert));
     socket.on('alert_ack', (alert: Alert) => this.replace(alert));
-    // Après une coupure, on recharge pour récupérer les alertes émises pendant l'absence
+    // Même socket pour le reste de l'état temps réel (nœuds, télémétrie, commandes, predict-anomalie)
+    socket.on('node_status', (e: Parameters<LiveStateService['onNodeStatus']>[0]) => this.liveState.onNodeStatus(e));
+    socket.on('telemetry', (t: Telemetry) => this.liveState.onTelemetry(t));
+    socket.on('command_status', (c: CommandView) => this.liveState.onCommandStatus(c));
+    socket.on('seq_gap', (g: SeqGap) => this.liveState.onSeqGap(g));
+    socket.on('score', (s: Score) => this.liveState.onScore(s));
+    socket.on('predictive_config', (c: PredictiveConfig) => this.liveState.onPredictiveConfig(c));
+    // Après une coupure, on recharge pour récupérer ce qui a été émis pendant l'absence
     socket.io.on('reconnect', () => this.reload());
     this.socket = socket;
     this.reload();
@@ -51,6 +68,12 @@ export class AlertsService {
 
   private reload() {
     this.api.getAlerts().subscribe((alerts) => this.list.set(alerts));
+    this.liveState.load();
+  }
+
+  /** Mise à jour immédiate après un acquittement (le backend diffuse aussi "alert_ack"). */
+  markAcknowledged(id: number) {
+    this.list.update((list) => list.map((a) => (a.id === id ? { ...a, acknowledged: true } : a)));
   }
 
   private add(alert: Alert) {
