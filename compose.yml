@@ -28,15 +28,6 @@ services:
     image: eclipse-mosquitto:2
     container_name: sentinel-mosquitto
     restart: unless-stopped
-    ports:
-      # MQTT en clair pour les nœuds IoT. Traefik n'expose que le 8883 en TLS, et
-      # l'ESP8266 ne parle pas encore MQTTS : sans ce port, il ne peut pas joindre
-      # le broker. Le sous-réseau de table est étanche et le broker refuse les
-      # connexions anonymes, mais ça reste du trafic en clair : à retirer dès que
-      # le nœud passe en MQTTS.
-      # MQTT_BIND_IP dans le .env permet de restreindre l'écoute à la seule
-      # adresse du réseau de table plutôt qu'à toutes les interfaces.
-      - "${MQTT_BIND_IP:-0.0.0.0}:1883:1883"
     volumes:
       - ./mosquitto/config:/mosquitto/config:ro
       - mosquitto-data:/mosquitto/data

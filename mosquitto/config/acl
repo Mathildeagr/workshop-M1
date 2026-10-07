@@ -1,0 +1,36 @@
+# Qui a le droit de publier quoi.
+#
+# Sans ce fichier, tout compte authentifié peut écrire sur n'importe quel topic :
+# le nœud pourrait émettre un env_critical au nom de la brique d'analyse, ou se
+# commander lui-même. L'anti-usurpation du backend limite les dégâts à
+# l'enregistrement, pas à la diffusion — un dashboard abonné verrait quand même
+# passer l'alerte.
+#
+# Chaque compte n'écrit donc que ses propres topics, et ne lit que ce qui le
+# concerne.
+
+# Le nœud : il publie ce qu'il mesure, il reçoit ses ordres.
+user esp01
+topic write sentinel/esp01/events
+topic write sentinel/esp01/telemetry
+topic write sentinel/esp01/status
+topic read  sentinel/esp01/command
+
+# La brique d'analyse : elle écoute tous les nœuds, elle ne parle qu'en son nom.
+user predictive
+topic read  sentinel/+/telemetry
+topic read  sentinel/+/events
+topic write sentinel/predictive/events
+topic write sentinel/predictive/score
+topic write sentinel/predictive/status
+topic write sentinel/predictive/config
+topic read  sentinel/predictive/command
+
+# Le backend : il voit tout, et il est le seul à commander.
+user backend
+topic read  sentinel/#
+topic write sentinel/+/command
+
+# Vérification : chaque compte peut écrire sur son seul topic d'essai, grâce à la
+# substitution %u. Ces topics ne portent rien et personne ne les écoute.
+pattern write sentinel/selftest/%u
