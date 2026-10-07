@@ -142,20 +142,32 @@ services:
     networks:
       - internal
 
-  # Service IA désactivé tant que son dossier (Dockerfile + code) n'existe pas : sinon "docker compose up" échoue.
-  #
-  # # données capteurs -> événements
-  # predict-anomalie:
-  #   build:
-  #     context: ./predict-anomalie
-  #   container_name: sentinel-predict-anomalie
-  #   restart: unless-stopped
-  #   depends_on:
-  #     - mosquitto
-  #     - database
-  #   networks:
-  #     - internal
-  #   #TODO: on veut un volume pour stocker le modèle entrainé ?
+  # données capteurs -> événements d'environnement
+  # Écoute les mesures sur le bus, les archive, et émet env_drift / env_anomaly /
+  # env_critical / env_cleared. Reçoit ses consignes sur sentinel/predictive/command.
+  predict-anomalie:
+    build:
+      context: ./predict-anomalie
+    container_name: sentinel-predict-anomalie
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-sentinel}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-sentinel_events}
+      PREDICT_MQTT_HOST: mosquitto
+      PREDICT_MQTT_USER: ${PREDICT_MQTT_USER:-predictive}
+      PREDICT_MQTT_PASSWORD: ${PREDICT_MQTT_PASSWORD:?PREDICT_MQTT_PASSWORD manquant dans le .env racine}
+      # Sortie de secours tant que le backend n'a pas d'abonné MQTT : il reçoit
+      # alors les alertes par sa propre route. Laisser vide pour la couper.
+      SENTINEL_API_URL: ${PREDICT_API_URL:-http://backend:3000/api/v1/alerts}
+      SENTINEL_API_TOKEN: ${PREDICT_API_KEY:-}
+    volumes:
+      - predict-models:/var/lib/predict-anomalie   # modèle entraîné, rechargé au démarrage
+    depends_on:
+      database:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    networks:
+      - internal   # pas d'exposition : le dashboard passe par le backend
 
 networks:
   edge:
@@ -169,4 +181,5 @@ volumes:
   mosquitto-data:
   mosquitto-logs:
   vision-data:
+  predict-models:
   # traefik-certs:
