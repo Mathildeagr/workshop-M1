@@ -36,9 +36,17 @@
       </li>
     </ul>
 
-    <h2>Dernières alertes</h2>
+    <h2>
+      Dernières alertes
+      <span class="live" [class.on]="alertsLive()">{{ alertsLive() ? 'Temps réel' : 'Hors ligne' }}</span>
+    </h2>
     @for (a of recentAlerts(); track a.id) {
-      <p class="alert">{{ a.createdAt | date: 'HH:mm:ss' }} · {{ a.type }} ({{ a.source }})</p>
+      <p class="alert" [class]="a.level" [class.acknowledged]="a.acknowledged">
+        {{ a.createdAt | date: 'HH:mm:ss' }} · {{ a.type }} ({{ a.source }})
+        @if (details(a)) {
+          <small>{{ details(a) }}</small>
+        }
+      </p>
     } @empty {
       <p class="muted">Aucune alerte</p>
     }
