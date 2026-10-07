@@ -67,6 +67,61 @@ def read_defines(path: Path) -> dict[str, str]:
     return found
 
 
+def render_secrets(*, ssid, wifi_password, esp_ip, gateway, subnet, dns,
+                   host_ip, tls, mqtt_password, timezone) -> str:
+    """Contenu de secrets.h. Partagé par la génération complète et le reciblage."""
+    return f"""// Généré par scripts/generate-secrets.py — ignoré par git.
+// Relancer le script plutôt que d'éditer : le broker doit connaître le même
+// mot de passe, et il est généré en même temps.
+
+#pragma once
+
+#define WIFI_SSID      "{ssid}"
+#define WIFI_PASSWORD  "{wifi_password}"
+
+// Adressage fixe imposé par l'équipe infra. Sous-réseau de table.
+#define NET_STATIC_IP  {esp_ip.replace(".", ", ")}
+#define NET_GATEWAY    {gateway.replace(".", ", ")}
+#define NET_SUBNET     {subnet.replace(".", ", ")}
+#define NET_DNS        {dns.replace(".", ", ")}
+
+// Identité du nœud : sert de client-id MQTT et de préfixe de topic.
+#define DEVICE_ID      "esp01"
+
+// Broker Mosquitto, sur le PC serveur. En TLS, le nœud passe par l'entree 8883
+// de Traefik, qui dechiffre et relaie vers le broker.
+#define MQTT_TLS       {1 if tls else 0}
+#define MQTT_HOST      "{host_ip}"
+#define MQTT_PORT      {8883 if tls else 1883}
+#define MQTT_USER      "esp01"
+#define MQTT_PASSWORD  "{mqtt_password}"
+
+// Serveur de temps. Le sous-réseau de table est étanche, donc pool.ntp.org est
+// injoignable : c'est le conteneur ntp du PC serveur qui répond.
+#define NTP_SERVER    "{host_ip}"
+#define NTP_TIMEZONE  "{timezone}"
+"""
+
+
+def render_ca(pem: str) -> str:
+    """Contenu de ca_cert.h : l'autorite que le nœud embarque."""
+    return f"""// Genere par scripts/generate-secrets.py depuis certs/sentinel.crt.
+// Ignore par git : le certificat porte l'adresse IP du serveur, donc il est
+// propre a une machine et a un reseau.
+//
+// Il est auto-signe, donc il est sa propre autorite. S'il est regenere, il faut
+// reflasher le nœud : la copie embarquee ici doit rester celle que Traefik sert.
+
+#pragma once
+
+#include <Arduino.h>
+
+static const char MQTT_CA_CERT[] PROGMEM = R"CERT(
+{pem}
+)CERT";
+"""
+
+
 def quoted(value: str) -> str:
     return value.strip().strip('"')
 
@@ -132,6 +187,11 @@ def main() -> int:
     parser.add_argument("--wifi-ssid", help="défaut : celui déjà en place")
     parser.add_argument("--wifi-password", help="défaut : celui déjà en place")
     parser.add_argument(
+        "--retarget",
+        action="store_true",
+        help="réaligne seulement les adresses et le certificat embarqué, sans toucher aux secrets",
+    )
+    parser.add_argument(
         "--no-tls",
         action="store_true",
         help="le nœud parle en clair sur 1883 plutôt qu'en TLS sur 8883",
@@ -177,6 +237,48 @@ def main() -> int:
         secrets_h,
         ROOT / "mosquitto" / "config" / "passwd",
     ]
+    # --- reciblage : l'adresse n'est pas un secret --------------------------
+    #
+    # Le serveur change d'adresse chaque fois que le partage de connexion la
+    # redistribue. Faire tourner tous les mots de passe pour autant casserait la
+    # base, qui garde l'ancien, et le broker, qui relirait ses comptes. On ne
+    # touche donc qu'aux adresses et au certificat embarqué.
+    if args.retarget:
+        if not secrets_h.exists():
+            parser.error("aucun secrets.h à recibler : lancer le script sans --retarget")
+
+        known = read_defines(secrets_h)
+        embedded = known.get("MQTT_TLS", "0").strip() == "1"
+        before = secrets_h.read_text(encoding="utf-8")
+        after = render_secrets(
+            ssid=quoted(known.get("WIFI_SSID", "")),
+            wifi_password=quoted(known.get("WIFI_PASSWORD", "")),
+            esp_ip=esp_ip, gateway=gateway, subnet=subnet, dns=dns,
+            host_ip=str(host_ip), tls=embedded,
+            mqtt_password=quoted(known.get("MQTT_PASSWORD", "")),
+            timezone=quoted(known.get("NTP_TIMEZONE", "")) or "CET-1CEST,M3.5.0,M10.5.0/3",
+        )
+
+        changed = after != before
+        if changed:
+            secrets_h.write_text(after, encoding="utf-8")
+            secrets_h.chmod(0o600)
+
+        if embedded and certificate.exists():
+            fresh = render_ca(certificate.read_text(encoding="utf-8").strip())
+            if not ca_header.exists() or ca_header.read_text(encoding="utf-8") != fresh:
+                ca_header.write_text(fresh, encoding="utf-8")
+                ca_header.chmod(0o644)
+                changed = True
+
+        if changed:
+            print(f"Configuration du nœud réalignée sur {host_ip}.")
+            print("Les mots de passe sont inchangés. Le nœud doit être reflashé :")
+            print("  cd firmware/esp01 && pio run -t upload")
+            return 10
+        print(f"Configuration du nœud déjà à jour pour {host_ip}.")
+        return 0
+
     tls = not args.no_tls
     if tls and not certificate.exists():
         parser.error(
@@ -299,37 +401,11 @@ VISION_SERVICE_TOKEN={vision_token}
 
     # --- firmware -----------------------------------------------------------
 
-    write(secrets_h, f"""// Généré par scripts/generate-secrets.py — ignoré par git.
-// Relancer le script plutôt que d'éditer : le broker doit connaître le même
-// mot de passe, et il est généré en même temps.
-
-#pragma once
-
-#define WIFI_SSID      "{ssid}"
-#define WIFI_PASSWORD  "{wifi_password}"
-
-// Adressage fixe imposé par l'équipe infra. Sous-réseau de table.
-#define NET_STATIC_IP  {esp_ip.replace(".", ", ")}
-#define NET_GATEWAY    {gateway.replace(".", ", ")}
-#define NET_SUBNET     {subnet.replace(".", ", ")}
-#define NET_DNS        {dns.replace(".", ", ")}
-
-// Identité du nœud : sert de client-id MQTT et de préfixe de topic.
-#define DEVICE_ID      "esp01"
-
-// Broker Mosquitto, sur le PC serveur. En TLS, le nœud passe par l'entree 8883
-// de Traefik, qui dechiffre et relaie vers le broker.
-#define MQTT_TLS       {1 if tls else 0}
-#define MQTT_HOST      "{host_ip}"
-#define MQTT_PORT      {8883 if tls else 1883}
-#define MQTT_USER      "esp01"
-#define MQTT_PASSWORD  "{mqtt_passwords["esp01"]}"
-
-// Serveur de temps. Le sous-réseau de table est étanche, donc pool.ntp.org est
-// injoignable : c'est le conteneur ntp du PC serveur qui répond.
-#define NTP_SERVER    "{host_ip}"
-#define NTP_TIMEZONE  "{timezone}"
-""")
+    write(secrets_h, render_secrets(
+        ssid=ssid, wifi_password=wifi_password, esp_ip=esp_ip, gateway=gateway,
+        subnet=subnet, dns=dns, host_ip=str(host_ip), tls=tls,
+        mqtt_password=mqtt_passwords["esp01"], timezone=timezone,
+    ))
 
     # --- autorite de certification embarquee ---------------------------------
 
@@ -337,22 +413,7 @@ VISION_SERVICE_TOKEN={vision_token}
         # Le certificat est auto-signe : il est sa propre autorite. Le nœud en
         # embarque une copie pour verifier a qui il parle — sans elle, il ne
         # resterait que setInsecure(), qui chiffre sans authentifier.
-        pem = certificate.read_text(encoding="utf-8").strip()
-        write(ca_header, f"""// Genere par scripts/generate-secrets.py depuis certs/sentinel.crt.
-// Ignore par git : le certificat porte l'adresse IP du serveur, donc il est
-// propre a une machine et a un reseau.
-//
-// Il est auto-signe, donc il est sa propre autorite. S'il est regenere, il faut
-// reflasher le nœud : la copie embarquee ici doit rester celle que Traefik sert.
-
-#pragma once
-
-#include <Arduino.h>
-
-static const char MQTT_CA_CERT[] PROGMEM = R"CERT(
-{pem}
-)CERT";
-""", mode=0o644)
+        write(ca_header, render_ca(certificate.read_text(encoding="utf-8").strip()), mode=0o644)
     elif ca_header.exists():
         ca_header.unlink()
         print(f"  supprime   {ca_header.relative_to(ROOT)}  (transport en clair)")

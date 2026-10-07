@@ -4,55 +4,97 @@ echo " Initialisation de l'environnement sécurisé Sentinel-X..."
 # 1. Création des dossiers nécessaires
 mkdir -p certs mosquitto/config
 
-# 2. Certificat TLS de Traefik
+# 2. Adresse du serveur sur le réseau de table
 #
-# Le nom des fichiers doit correspondre à traefik/dynamic/tls.yml, et le
-# certificat doit porter un subjectAltName : les nœuds IoT se connectent par
-# adresse IP, et une validation par IP échoue sans SAN correspondant. Sans ces
-# deux points, Traefik sert son certificat de remplacement intégré.
-#
-# On teste la clé autant que le certificat : la clé est ignorée par git et le
-# certificat ne l'est pas, donc sur un clone frais le certificat existe sans sa
-# clé et l'ancienne condition sautait la génération.
+# C'est elle que le nœud vise pour le broker et pour l'heure, et c'est elle que
+# le certificat doit couvrir. Sur un partage de connexion elle change à chaque
+# fois, d'où le réalignement automatique plus bas.
 SERVER_IP="${SERVER_IP:-$(ipconfig getifaddr en0 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')}"
+if [ -z "$SERVER_IP" ]; then
+    echo "Adresse du serveur introuvable. Relancer avec SERVER_IP=<adresse> ./init.sh"
+    exit 1
+fi
+echo "Serveur sur $SERVER_IP"
 
+# 3. Certificat TLS de Traefik
+#
+# Les noms doivent correspondre à traefik/dynamic/tls.yml, et le certificat doit
+# couvrir l'adresse du serveur : sans ça Traefik sert son certificat de
+# remplacement et le nœud refuse la connexion.
+#
+# On teste la clé autant que le certificat — la clé est ignorée par git, pas le
+# certificat, donc sur un clone frais l'un existait sans l'autre — et on
+# régénère aussi quand l'adresse a changé.
+besoin_certificat=0
 if [ ! -f "./certs/sentinel.crt" ] || [ ! -f "./certs/sentinel.key" ]; then
-    echo "Génération du certificat TLS (SAN : sentinel.localhost, localhost, ${SERVER_IP:-aucune IP})..."
-    SAN="DNS:sentinel.localhost,DNS:localhost,IP:127.0.0.1"
-    [ -n "$SERVER_IP" ] && SAN="$SAN,IP:$SERVER_IP"
+    besoin_certificat=1
+elif ! openssl x509 -in ./certs/sentinel.crt -noout -ext subjectAltName 2>/dev/null \
+     | grep -q "IP Address:$SERVER_IP"; then
+    echo "Le certificat ne couvre pas $SERVER_IP, régénération..."
+    besoin_certificat=1
+fi
 
+if [ "$besoin_certificat" = "1" ]; then
+    echo "Génération du certificat TLS (SAN : sentinel.localhost, localhost, $SERVER_IP)..."
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
         -keyout ./certs/sentinel.key -out ./certs/sentinel.crt \
         -subj "/C=FR/ST=Occitanie/L=Montpellier/O=AetherCorp/CN=sentinel.localhost" \
-        -addext "subjectAltName=$SAN"
-    echo "   Pour un autre réseau : SERVER_IP=<adresse> ./init.sh après avoir supprimé certs/sentinel.*"
+        -addext "subjectAltName=DNS:sentinel.localhost,DNS:localhost,IP:127.0.0.1,IP:$SERVER_IP"
+    chmod 600 ./certs/sentinel.key
 fi
 
-# 3. Secrets du projet
+# 4. Secrets du projet
 #
 # Un seul script les génère tous, parce qu'une même valeur apparaît dans
 # plusieurs fichiers : chaque mot de passe MQTT est lu par son client et par le
-# broker, la clé predictive par le backend et par la brique d'analyse. En écrire
-# un seul à la main désaligne les autres.
+# broker, la clé predictive par le backend et par la brique d'analyse.
 #
 # Aucun mot de passe ne figure donc ici : le sujet interdit les secrets en clair
 # dans le dépôt.
+#
+# Et surtout : une adresse n'est pas un secret. Quand seule l'adresse change, on
+# réaligne la configuration du nœud sans faire tourner les mots de passe — les
+# régénérer casserait la base, qui garde l'ancien, et le broker, qui devrait
+# relire ses comptes.
+reflasher=0
 if [ -f ./.env ] && [ -f ./mosquitto/config/passwd ]; then
-    echo "Secrets déjà en place (./scripts/generate-secrets.py --force pour en tirer de nouveaux)"
-elif [ -n "$SERVER_IP" ]; then
-    echo "Génération des secrets et des comptes MQTT..."
-    ./scripts/generate-secrets.py --host-ip "$SERVER_IP"
+    ./scripts/generate-secrets.py --host-ip "$SERVER_IP" --retarget
+    [ "$?" = "10" ] && reflasher=1
 else
-    echo "Adresse du serveur inconnue : lancer ./scripts/generate-secrets.py --host-ip <adresse>"
+    echo "Génération des secrets et des comptes MQTT..."
+    ./scripts/generate-secrets.py --host-ip "$SERVER_IP" || exit 1
+    reflasher=1
 fi
 
-# 4. Correction des droits pour résoudre le bug Windows/Docker
-echo "Correction des permissions de lecture..."
-MSYS_NO_PATHCONV=1 docker run --rm -v "${PWD}/mosquitto/config:/config" alpine chmod 644 /config/passwd
+# Le fichier de comptes du broker est monté dans le conteneur, où mosquitto
+# tourne sous son propre compte et doit pouvoir le lire.
+chmod 644 ./mosquitto/config/passwd 2>/dev/null
 
 # 5. Démarrage de l'infrastructure
 echo "Lancement des conteneurs..."
-docker compose up -d
+docker compose up -d --build
+
+# Mosquitto ne relit son fichier de comptes qu'au démarrage, et un conteneur déjà
+# en place garde les anciens.
+docker compose restart mosquitto >/dev/null 2>&1
+
+# PostgreSQL n'applique son mot de passe qu'à l'initialisation d'un volume
+# vierge : une base déjà créée garde l'ancien, et plus rien ne s'y connecte. On
+# ne réaligne que si l'authentification échoue vraiment.
+PG_USER=$(grep '^POSTGRES_USER=' .env | cut -d= -f2)
+PG_PASSWORD=$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2)
+PG_DB=$(grep '^POSTGRES_DB=' .env | cut -d= -f2)
+for _ in $(seq 1 20); do
+    docker compose exec -T database pg_isready -q 2>/dev/null && break
+    sleep 1
+done
+if ! docker compose exec -T -e PGPASSWORD="$PG_PASSWORD" database \
+     psql -h 127.0.0.1 -U "$PG_USER" -d "$PG_DB" -tAc "select 1" >/dev/null 2>&1; then
+    echo "Réalignement du mot de passe de la base..."
+    printf "ALTER USER %s PASSWORD '%s';\n" "$PG_USER" "$PG_PASSWORD" \
+      | docker compose exec -T database psql -U "$PG_USER" -d postgres -q
+    docker compose restart backend predict-anomalie >/dev/null 2>&1
+fi
 
 # 6. Service vision (ai-vision/server.py) sur l'hôte : Docker Desktop ne transmet pas la webcam aux conteneurs
 # Hôte, port et jeton lus depuis ai-vision/.env (SENTINEL_SERVICE_*)
@@ -69,4 +111,23 @@ else
     echo "Service vision non lancé : venv ai-vision/.venv introuvable (voir ai-vision/README.md)"
 fi
 
-echo "Infrastructure déployée avec succès ! Accès via https://localhost"
+# 7. Le nœud IoT
+#
+# Son firmware embarque l'adresse du broker, du serveur de temps, et une copie du
+# certificat : quand l'un des trois change, il faut le reflasher. Le flashage
+# touche à du matériel, donc il ne part pas tout seul — sauf si on le demande.
+if [ "$reflasher" = "1" ]; then
+    echo
+    if [ "${FLASH:-0}" = "1" ] && command -v pio >/dev/null; then
+        echo "Flashage du nœud..."
+        (cd firmware/esp01 && pio run -t upload)
+    else
+        echo "La configuration du nœud a changé : il doit être reflashé."
+        echo "  cd firmware/esp01 && pio run -t upload"
+        echo "  (ou FLASH=1 ./init.sh pour que ce script s'en charge)"
+    fi
+fi
+
+echo
+echo "Infrastructure déployée. Accès via https://localhost"
+echo "Contrôle complet : ./scripts/check-stack.sh"
