@@ -75,3 +75,10 @@ scripts/publish-camera.env
 # ─── Python : caches d'outils ────────────────
 .pytest_cache/
 .ruff_cache/
+
+# ─── Certificats TLS ────────────────────────────
+# Générés par init.sh et propres à chaque machine : le SAN porte son adresse IP.
+# Un certificat versionné fait sauter la génération chez le suivant, qui se
+# retrouve avec une clé absente et une adresse qui n'est pas la sienne.
+certs/*.crt
+certs/*.key

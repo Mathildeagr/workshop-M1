@@ -1,4 +1,14 @@
 tls:
+  stores:
+    default:
+      # Certificat servi quand le client n'annonce aucun nom de serveur. C'est le
+      # cas des nœuds IoT, qui se connectent par adresse IP : sans cette
+      # déclaration Traefik sert son certificat de remplacement intégré, et
+      # aucune validation n'est possible côté nœud.
+      defaultCertificate:
+        certFile: "/etc/certs/sentinel.crt"
+        keyFile: "/etc/certs/sentinel.key"
+
   certificates:
     - certFile: "/etc/certs/sentinel.crt"
       keyFile: "/etc/certs/sentinel.key"
