@@ -112,6 +112,7 @@ def hash_mosquitto(passwords: dict[str, str]) -> None:
         ],
         capture_output=True,
         text=True,
+        check=False,   # l'echec est traite juste en dessous
     )
     if result.returncode != 0:
         print(f"  ATTENTION  {target.relative_to(ROOT)} est EN CLAIR")
@@ -130,6 +131,11 @@ def main() -> int:
     parser.add_argument("--esp-ip", help="adresse fixe du nœud (défaut : celle déjà en place)")
     parser.add_argument("--wifi-ssid", help="défaut : celui déjà en place")
     parser.add_argument("--wifi-password", help="défaut : celui déjà en place")
+    parser.add_argument(
+        "--no-tls",
+        action="store_true",
+        help="le nœud parle en clair sur 1883 plutôt qu'en TLS sur 8883",
+    )
     parser.add_argument("--force", action="store_true", help="remplace les fichiers existants")
     args = parser.parse_args()
 
@@ -139,6 +145,8 @@ def main() -> int:
         parser.error(f"--host-ip invalide : {args.host_ip}")
 
     secrets_h = ROOT / "firmware" / "esp01" / "src" / "config" / "secrets.h"
+    ca_header = secrets_h.with_name("ca_cert.h")
+    certificate = ROOT / "certs" / "sentinel.crt"
     existing = read_defines(secrets_h)
 
     esp_ip = args.esp_ip or existing.get("NET_STATIC_IP", "").replace(" ", "").replace(",", ".")
@@ -169,6 +177,12 @@ def main() -> int:
         secrets_h,
         ROOT / "mosquitto" / "config" / "passwd",
     ]
+    tls = not args.no_tls
+    if tls and not certificate.exists():
+        parser.error(
+            f"{certificate.relative_to(ROOT)} absent : lancer ./init.sh pour le generer,"
+            " ou passer --no-tls"
+        )
     present = [t for t in targets if t.exists()]
     if present and not args.force:
         print("Des secrets existent déjà :")
@@ -196,7 +210,9 @@ def main() -> int:
     postgres_user, postgres_db = "sentinel", "sentinelx"
     timezone = quoted(existing.get("NTP_TIMEZONE", "")) or "CET-1CEST,M3.5.0,M10.5.0/3"
 
-    print(f"Secrets de production, PC serveur {host_ip}, nœud {esp_ip} sur {network}\n")
+    transport = "MQTTS sur 8883" if tls else "MQTT en clair sur 1883"
+    print(f"Secrets de production, PC serveur {host_ip}, nœud {esp_ip} sur {network}")
+    print(f"Transport du nœud : {transport}\n")
 
     # --- .env de la racine, lu par compose ----------------------------------
 
@@ -301,9 +317,11 @@ VISION_SERVICE_TOKEN={vision_token}
 // Identité du nœud : sert de client-id MQTT et de préfixe de topic.
 #define DEVICE_ID      "esp01"
 
-// Broker Mosquitto, sur le PC serveur.
+// Broker Mosquitto, sur le PC serveur. En TLS, le nœud passe par l'entree 8883
+// de Traefik, qui dechiffre et relaie vers le broker.
+#define MQTT_TLS       {1 if tls else 0}
 #define MQTT_HOST      "{host_ip}"
-#define MQTT_PORT      1883
+#define MQTT_PORT      {8883 if tls else 1883}
 #define MQTT_USER      "esp01"
 #define MQTT_PASSWORD  "{mqtt_passwords["esp01"]}"
 
@@ -313,14 +331,58 @@ VISION_SERVICE_TOKEN={vision_token}
 #define NTP_TIMEZONE  "{timezone}"
 """)
 
+    # --- autorite de certification embarquee ---------------------------------
+
+    if tls:
+        # Le certificat est auto-signe : il est sa propre autorite. Le nœud en
+        # embarque une copie pour verifier a qui il parle — sans elle, il ne
+        # resterait que setInsecure(), qui chiffre sans authentifier.
+        pem = certificate.read_text(encoding="utf-8").strip()
+        write(ca_header, f"""// Genere par scripts/generate-secrets.py depuis certs/sentinel.crt.
+// Ignore par git : le certificat porte l'adresse IP du serveur, donc il est
+// propre a une machine et a un reseau.
+//
+// Il est auto-signe, donc il est sa propre autorite. S'il est regenere, il faut
+// reflasher le nœud : la copie embarquee ici doit rester celle que Traefik sert.
+
+#pragma once
+
+#include <Arduino.h>
+
+static const char MQTT_CA_CERT[] PROGMEM = R"CERT(
+{pem}
+)CERT";
+""", mode=0o644)
+    elif ca_header.exists():
+        ca_header.unlink()
+        print(f"  supprime   {ca_header.relative_to(ROOT)}  (transport en clair)")
+
     # --- broker -------------------------------------------------------------
 
     hash_mosquitto(mqtt_passwords)
 
+    # PostgreSQL n'applique POSTGRES_PASSWORD qu'a l'initialisation d'un volume
+    # vierge : une base deja creee garde l'ancien, et plus rien ne s'y connecte.
+    volumes = subprocess.run(
+        ["docker", "volume", "ls", "--quiet", "--filter", "name=db-data"],
+        capture_output=True, text=True, check=False,
+    ) if shutil.which("docker") else None
+    if volumes is not None and volumes.stdout.strip():
+        print(f"""
+ATTENTION : une base existe deja ({volumes.stdout.split()[0]})
+
+  Elle garde son ancien mot de passe : PostgreSQL n'applique POSTGRES_PASSWORD
+  qu'a l'initialisation d'un volume vierge. Le realigner sans rien perdre :
+
+    printf "ALTER USER {postgres_user} PASSWORD '$(grep ^POSTGRES_PASSWORD= .env | cut -d= -f2)';" \\
+      | docker compose exec -T database psql -U {postgres_user} -d postgres
+""")
+
     print(f"""
 À faire ensuite
-  1. docker compose up -d --build        puis  docker compose restart mosquitto
-  2. cd firmware/esp01 && pio run -t upload
+  1. docker compose restart mosquitto    il relit ses comptes au demarrage
+  2. docker compose up -d --build        sinon les conteneurs gardent les anciens secrets
+  3. cd firmware/esp01 && pio run -t upload
 
 Qui a besoin de quoi
   backend     rien, backend/.env est généré. Identifiants admin dedans.

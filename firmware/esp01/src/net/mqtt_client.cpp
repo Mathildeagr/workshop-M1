@@ -50,6 +50,22 @@ void MqttClient::begin() {
   snprintf(_topicStatus,    sizeof(_topicStatus),    "sentinel/%s/status",    _deviceId);
   snprintf(_topicCommand,   sizeof(_topicCommand),   "sentinel/%s/command",   _deviceId);
 
+#if MQTT_TLS
+  // Le certificat est en flash : BearSSL veut une chaine en memoire vive pour
+  // l'analyser, mais ne garde ensuite que sa forme interne.
+  const size_t pemLength = strlen_P(MQTT_CA_CERT);
+  char *pem = (char *)malloc(pemLength + 1);
+  if (pem != nullptr) {
+    strcpy_P(pem, MQTT_CA_CERT);
+    _trust = new BearSSL::X509List(pem);
+    free(pem);
+    _net.setTrustAnchors(_trust);
+  } else {
+    Serial.println(F("TLS : memoire insuffisante pour l'autorite"));
+  }
+  _net.setBufferSizes(TLS_RX_BUFFER, TLS_TX_BUFFER);
+#endif
+
   _mqtt.begin(_host, _port, _net);
   _mqtt.onMessageAdvanced(onMessage);
 
@@ -64,6 +80,19 @@ void MqttClient::begin() {
 bool MqttClient::reconnect() {
   if (!_link.isConnected()) return false;
 
+#if MQTT_TLS
+  // TLS verifie les dates de validite du certificat, et l'horloge du nœud part
+  // a 1970. Tenter la poignee de main avant la synchronisation la ferait
+  // echouer sans rien dire d'utile : on attend l'heure.
+  if (_clock == nullptr || !_clock->hasWallClock()) {
+    if (_waitingForClock) {
+      Serial.println(F("TLS : en attente de l'heure avant de joindre le broker"));
+      _waitingForClock = false;
+    }
+    return false;
+  }
+#endif
+
   const uint32_t now = millis();
   if ((int32_t)(now - _nextRetry) < 0) return false;
 
@@ -75,9 +104,29 @@ bool MqttClient::reconnect() {
     _connectDelay = CONNECT_MIN_MS;
     _mqtt.publish(_topicStatus, "online", true, 1);
     _mqtt.subscribe(_topicCommand, 1);
+#if MQTT_TLS
+    Serial.print(F("broker joint en TLS, topic "));
+#else
     Serial.print(F("broker joint, topic "));
-    Serial.println(_topicEvents);
+#endif
+    Serial.print(_topicEvents);
+    // Le cout du TLS est a l'execution, pas a la compilation : la poignee de
+    // main vient de passer, c'est le moment ou le tas est le plus sollicite.
+    Serial.print(F("  (tas libre "));
+    Serial.print(ESP.getFreeHeap());
+    Serial.println(F(" o)"));
   } else {
+#if MQTT_TLS
+    // Un echec TLS est muet par nature : sans ce code, on chercherait longtemps.
+    char reason[64];
+    const int err = _net.getLastSSLError(reason, sizeof(reason));
+    if (err != 0) {
+      Serial.print(F("TLS refuse ("));
+      Serial.print(err);
+      Serial.print(F(") : "));
+      Serial.println(reason);
+    }
+#endif
     _connectDelay = backoff(_connectDelay, CONNECT_MAX_MS);
     _nextRetry = now + jitter(_connectDelay);
   }

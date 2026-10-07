@@ -82,3 +82,4 @@ scripts/publish-camera.env
 # retrouve avec une clé absente et une adresse qui n'est pas la sienne.
 certs/*.crt
 certs/*.key
+firmware/esp01/src/config/ca_cert.h

@@ -1,7 +1,20 @@
 #pragma once
 
 #include <MQTT.h>
-#include <WiFiClient.h>
+
+// MQTT_TLS vient de la configuration du site : le transport se choisit a la
+// compilation, parce qu'un WiFiClientSecure n'est pas un WiFiClient.
+#include "config/secrets.h"
+
+#if MQTT_TLS
+  #include <WiFiClientSecure.h>
+  #include "config/ca_cert.h"
+  using MqttTransport = WiFiClientSecure;
+#else
+  #include <WiFiClient.h>
+  using MqttTransport = WiFiClient;
+#endif
+
 #include "app/telemetry.h"
 #include "app/timesource.h"
 #include "net/command.h"
@@ -68,8 +81,14 @@ private:
   const char     *_user;
   const char     *_password;
 
-  WiFiClient _net;
-  MQTTClient _mqtt;
+  MqttTransport _net;
+  MQTTClient    _mqtt;
+
+#if MQTT_TLS
+  // L'autorite doit survivre a la connexion : BearSSL ne la copie pas.
+  BearSSL::X509List *_trust = nullptr;
+  bool               _waitingForClock = true;
+#endif
 
   ICommandSink *_commands;
 
@@ -89,6 +108,14 @@ private:
   uint32_t _flushDelay;
   uint32_t _nextRetry;
   uint32_t _connectDelay;
+
+#if MQTT_TLS
+  // BearSSL reserve 16 Ko de reception par defaut, que le nœud n'a pas. Ces
+  // tampons doivent rester plus grands que le plus gros enregistrement recu
+  // pendant la poignee de main : le certificat du serveur fait 1,4 Ko.
+  static const uint16_t TLS_RX_BUFFER = 4096;
+  static const uint16_t TLS_TX_BUFFER = 1024;
+#endif
 
   static const uint16_t BUFFER_SIZE    = 512;
   static const uint16_t ACK_TIMEOUT_MS = 1000;

@@ -21,9 +21,12 @@
 // Identite du noeud : sert de client-id MQTT et de prefixe de topic.
 #define DEVICE_ID      "esp01"
 
-// Broker Mosquitto. Laisser MQTT_USER a nullptr si le broker est ouvert.
+// Broker Mosquitto. En TLS, le nœud passe par l'entree 8883 de Traefik, qui
+// dechiffre et relaie vers le broker. MQTT_TLS a 1 exige ca_cert.h, genere par
+// le meme script depuis certs/sentinel.crt.
+#define MQTT_TLS       1
 #define MQTT_HOST      "192.168.10.10"
-#define MQTT_PORT      1883
+#define MQTT_PORT      8883
 #define MQTT_USER      "esp01"
 #define MQTT_PASSWORD  "a-renseigner"
 
