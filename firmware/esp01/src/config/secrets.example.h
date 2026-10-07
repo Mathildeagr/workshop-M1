@@ -1,5 +1,11 @@
-// Copier en secrets.h et renseigner. secrets.h est ignore par git : aucun
-// identifiant ne doit se retrouver dans le depot.
+// Ne pas remplir ce fichier a la main : scripts/generate-secrets.py ecrit
+// secrets.h, et genere en meme temps le compte correspondant dans le fichier de
+// mots de passe du broker. Les deux doivent venir du meme tirage.
+//
+//   ./scripts/generate-secrets.py --host-ip <IP du PC serveur>
+//
+// secrets.h est ignore par git : aucun identifiant ne doit se retrouver dans le
+// depot. Ce fichier-ci ne sert qu'a documenter la liste des reglages attendus.
 
 #pragma once
 
