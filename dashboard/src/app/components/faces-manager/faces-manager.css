@@ -1,5 +1,30 @@
-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px; }
-td { padding: 10px 4px; border-bottom: 1px solid var(--border); }
+/* Menu déroulant : replié par défaut pour laisser la place au flux caméra */
+summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  list-style: none;
+  cursor: pointer;
+}
+summary::-webkit-details-marker { display: none; }
+summary h2 { margin: 0; font-size: 16px; }
+summary::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+details[open] > summary { margin-bottom: 16px; }
+details[open] > summary::after { transform: rotate(-135deg); }
+summary:focus-visible { outline: 1px solid var(--blue); outline-offset: 4px; }
+.count { font-size: 10px; letter-spacing: 0.14em; color: var(--muted); }
+
+table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 24px; font-size: 12px; }
+td { padding: 10px 4px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 tr:last-child td { border-bottom: none; }
 
 form { display: grid; gap: 8px; margin-bottom: 16px; }
@@ -10,12 +35,12 @@ select {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 2px;
-  font-size: 12px;
-  letter-spacing: normal;
-  text-transform: none;
   background: var(--input-bg);
   color: var(--input-text);
   font: inherit;
+  font-size: 12px;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 button.small { padding: 4px 10px; font-size: 10px; }

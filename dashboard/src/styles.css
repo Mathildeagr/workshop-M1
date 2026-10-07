@@ -53,10 +53,6 @@ h2 {
   padding: 22px;
 }
 
-.card small{
-  height: 3rem
-}
-
 button {
   padding: 8px 14px;
   border: 1px solid var(--primary);
@@ -80,8 +76,21 @@ button.secondary {
 button.secondary:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); border-color: var(--muted); }
 button:disabled { opacity: 0.45; cursor: default; }
 
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Les champs et boutons ne débordent jamais de leur card */
 input,
-select { font-family: var(--font-mono); }
+select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  font-family: var(--font-mono);
+}
+button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
 input:focus,
 select:focus { outline: 1px solid var(--blue); outline-offset: 0; }

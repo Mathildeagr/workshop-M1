@@ -1,4 +1,8 @@
-<h2>Visages connus</h2>
+<details>
+<summary>
+  <h2>Visages connus</h2>
+  <span class="count">{{ faces().length }}</span>
+</summary>
 
 <table>
   @for (f of faces(); track f.name) {
@@ -57,3 +61,4 @@
 @if (message(); as m) {
   <p class="msg" [class.ok]="m.ok" [class.error]="!m.ok">{{ m.text }}</p>
 }
+</details>

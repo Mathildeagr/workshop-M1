@@ -33,12 +33,29 @@ h1 {
 
 .header-actions { display: flex; align-items: center; gap: 12px; }
 
+/* Deux rangées flex : statut + caméra, puis environnement + contrôle + prédictif.
+   Pas de hauteur fixe : chaque rangée prend la hauteur de sa card la plus haute
+   et les autres s'étirent, aucune card n'est rognée. */
 main {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 20px;
   padding: 24px;
 }
+
+.cards-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 20px;
+}
+.cards-row > * { min-width: 0; }
+
+.status { flex: 1 1 320px; }
+.vision { flex: 2 1 480px; }
+.environment-infos { flex: 1 1 280px; }
+.control,
+.predictive { flex: 1.3 1 340px; }
 
 /* Lignes de statut : libellé discret, valeur en monospace d'affichage */
 .rows { list-style: none; margin: 0 0 28px; padding: 0; }
@@ -122,15 +139,24 @@ main {
 
 .vision hr { margin: 24px 0 20px; border: none; border-top: 1px solid var(--border); }
 
+/* Trois petites cards empilées dans une seule colonne, qui se partagent sa hauteur */
 .environment-infos {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 20px;
+}
+.card.small {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 16px 18px;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 700px) {
   header { margin: 0 16px; }
-  main { padding: 16px; grid-template-columns: 1fr; }
+  main { padding: 16px; }
+  .cards-row > * { flex-basis: 100%; }
 }
 
 /* Nœud hors ligne, mesures figées, événements perdus : à voir au premier coup d'œil */
