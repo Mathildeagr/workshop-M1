@@ -41,6 +41,11 @@ MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 MAX_IMAGES = 10
 MAX_SAMPLES = 30
 STREAM_FPS = 15
+
+# Au-dela de ce silence, la camera est consideree comme muette : on le signale
+# et on tente de la rouvrir, plutot que de laisser le flux se figer sans mot dire.
+STALE_FRAME_S = 3.0
+REOPEN_EVERY_S = 5.0
 WATCHDOG_S = 5          # délai entre deux tentatives de relance de la vision
 
 app = Flask(__name__)
@@ -143,13 +148,36 @@ class VisionRunner:
             return
 
         policy, last_reload = vision.AlertPolicy(), time.time()
+        last_ok, next_reopen = time.time(), 0.0
         print("[vision] démarrée")
         try:
             while not self._stop.is_set():
                 ok, frame = cap.read()
                 if not ok:
+                    # Une caméra qui cesse de rendre des images ne lève aucune
+                    # erreur : la boucle continue de tourner, le flux reste
+                    # ouvert, et l'image se fige sans que rien ne le dise. On le
+                    # signale, puis on tente de rouvrir.
+                    now = time.time()
+                    if now - last_ok > STALE_FRAME_S:
+                        if not self.error:
+                            self.error = "la caméra ne renvoie plus d'image"
+                            print(f"[vision] {self.error}")
+                        if now >= next_reopen:
+                            next_reopen = now + REOPEN_EVERY_S
+                            try:
+                                cap.release()
+                                cap = vision.open_camera(source)
+                                print("[vision] caméra rouverte")
+                            except Exception as e:
+                                self.error = f"caméra injoignable : {e}"
                     time.sleep(0.05)
                     continue
+
+                last_ok = time.time()
+                if self.error:
+                    self.error = None
+                    print("[vision] caméra de nouveau en service")
                 if frame.shape[1] != config.FRAME_WIDTH:
                     frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
@@ -187,13 +215,20 @@ class BackendAlertSender(vision.AlertSender):
             self.session.headers["X-API-Key"] = config.API_TOKEN
 
     def send(self, payload):
-        print(f"[ALERTE] {payload['label']} ({payload['status']}, score {payload['confidence']})")
+        score = payload.get("confidence")
+        detail = f", score {score}" if score is not None else ""
+        print(f"[ALERTE] {payload['label']} ({payload['status']}{detail})")
         if not self.enabled:
             return
         body = {
             "type": payload["type"],
             "level": payload["level"],
-            "value": {k: payload[k] for k in ("label", "status", "detector", "confidence", "snapshot")},
+            # Toutes les alertes ne portent pas les memes champs : une fin
+            # d'alerte n'a ni score ni instantane, il n'y a rien a montrer d'une
+            # zone vide.
+            "value": {k: payload[k]
+                      for k in ("label", "status", "detector", "confidence", "snapshot")
+                      if k in payload},
         }
         try:
             self.queue.put_nowait(body)     # run() de la classe parente fait le POST
