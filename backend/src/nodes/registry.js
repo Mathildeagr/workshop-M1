@@ -1,7 +1,5 @@
 // État des nœuds connus du bus : en ligne / hors ligne (testament MQTT) et dernière télémétrie.
 
-const { formatAlert } = require("../events/alertRecord");
-
 // Champs de télémétrie relayés au dashboard (briefing §3.2) : on ne relaie rien d'autre
 const TELEMETRY_FIELDS = [
     "uptime_s", "temperature_c", "humidity_pct", "dew_point_c", "climate_age_ms",
@@ -20,7 +18,10 @@ function pickTelemetry(body) {
     return out;
 }
 
-function createNodeRegistry({ Alert, Device, io, now = Date.now }) {
+/**
+ * @param {object} deps  { io, raiseAlert } : raiseAlert vient de events/systemAlerts.js
+ */
+function createNodeRegistry({ io, raiseAlert, now = Date.now }) {
     const nodes = new Map();   // id -> { status, statusAt, lastTelemetryAt }
 
     function get(id) {
@@ -44,17 +45,15 @@ function createNodeRegistry({ Alert, Device, io, now = Date.now }) {
         // On ne crée l'alerte que sur un vrai changement en direct, pas au rejeu des messages retenus.
         // "online" n'est une alerte que s'il suit une coupure ("offline"), pas à la première connexion.
         const alarming = status === "offline" ? previous !== "offline" : previous === "offline";
-        if (!alarming || retained || !(await Device.findByPk(id))) return;
+        if (!alarming || retained) return;
         const physical = id.startsWith("esp");
-        const alert = await Alert.create({
+        await raiseAlert({
             deviceId: id,
             emitter: "broker",
             type: status === "offline" ? "node_offline" : "node_online",
             level: status === "offline" ? (physical ? "critical" : "warning") : "info",
-            origin: "broker",
             detail: status === "offline" ? "connexion perdue (testament MQTT)" : "reconnecté au broker",
         });
-        io.emit("alert", formatAlert(alert));
     }
 
     function handleTelemetry(id, body) {

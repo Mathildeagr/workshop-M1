@@ -1,4 +1,5 @@
 const { z } = require("zod");
+const { PLAYABLE } = require("./events/rules");
 
 // Identifiants courts et sans caractères spéciaux : pas d'injection possible dans les logs ou le dashboard
 const identifier = z.string().trim().min(1).max(50).regex(/^[a-zA-Z0-9_-]+$/, "Caractères autorisés : lettres, chiffres, _ et -");
@@ -75,7 +76,27 @@ const idParamSchema = z.object({
     id: z.coerce.number().int().positive(),
 });
 
+// Commande manuelle du superviseur vers un nœud (briefing §4) :
+// jouer une séquence par son nom, ou couper / rétablir le son et la lumière
+const commandSchema = z.discriminatedUnion("event", [
+    z.object({
+        node: identifier,
+        event: z.enum([...PLAYABLE]),
+    }).strict(),
+    z.object({
+        node: identifier,
+        event: z.enum(["activate", "deactivate"]),
+        target: z.enum(["intrusion", "sabotage", "environnement", "tout"]).default("tout"),
+        signal: z.enum(["sonore", "lumineux", "tous"]).default("tous"),
+    }).strict(),
+]);
+
+const commandQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    node: identifier.optional(),
+});
+
 module.exports = {
     loginSchema, createUserSchema, alertSchema, alertQuerySchema, idParamSchema, faceNameSchema, faceStatusSchema,
-    faceCaptureSchema,
+    faceCaptureSchema, commandSchema, commandQuerySchema,
 };

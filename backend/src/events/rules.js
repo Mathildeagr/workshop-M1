@@ -55,4 +55,4 @@ function commandFor(record, alarmNode) {
     return { node, command: { event } };
 }
 
-module.exports = { commandFor, isAllowed, familyOf };
+module.exports = { commandFor, isAllowed, familyOf, PLAYABLE };

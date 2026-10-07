@@ -3,7 +3,7 @@ const express = require("express");
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { Server } = require("socket.io");
-const { sequelize, Role, User, Device, Alert } = require("./models");
+const { sequelize, Role, User, Device, Alert, Command } = require("./models");
 const upgradeSchema = require("./schemaUpgrade");
 const { applySecurity, errorHandler, corsOptions } = require("./middleware/security");
 const { verifyToken, requireUser } = require("./middleware/auth");
@@ -15,6 +15,9 @@ const facesRouter = require("./routes/faces");
 const { createCommandPublisher } = require("./commands/publisher");
 const { createIngest } = require("./events/ingest");
 const { createNodeRegistry } = require("./nodes/registry");
+const { createSystemAlerts } = require("./events/systemAlerts");
+const { createSignalSettings } = require("./commands/signalSettings");
+const commandsRouter = require("./routes/commands");
 const { connectMqtt } = require("./mqtt/client");
 
 let dbReady = false;
@@ -39,9 +42,24 @@ io.on("connection", (socket) => {
 });
 
 // Réception des événements (bus MQTT et route HTTP) -> base, dashboard, commandes d'alarme aux nœuds
-const commands = createCommandPublisher({ io });
-const registry = createNodeRegistry({ Alert, Device, io });
-const ingest = createIngest({ Alert, Device, io, commands, alarmNode: config.alarmNode });
+const raiseAlert = createSystemAlerts({ Alert, Device, io });
+const registry = createNodeRegistry({ io, raiseAlert });
+const signalSettings = createSignalSettings();
+const commands = createCommandPublisher({
+    io,
+    Command,
+    ackTimeoutMs: config.commandAckTimeoutMs,
+    nodeStatus: (node) => registry.status(node)?.status ?? "unknown",
+    // Ordre non exécuté : l'alerte bascule sur le dashboard (§5). Pour un nœud hors ligne, node_offline suffit.
+    onFailed: (cmd) => {
+        if (cmd.failure === "node_offline") return;
+        raiseAlert({
+            deviceId: cmd.node, type: "command_failed", level: "warning", value: cmd.event,
+            detail: `${cmd.event} (${cmd.id}) : ${cmd.reason}`,
+        }).catch((err) => console.error("[commandes] alerte d'échec non créée :", err.message));
+    },
+});
+const ingest = createIngest({ Alert, Device, io, commands, signalSettings, raiseAlert, alarmNode: config.alarmNode });
 
 // Route de test (publique, ne révèle rien de sensible)
 app.get("/api/v1/health", (req, res) => {
@@ -55,6 +73,7 @@ const requireDb = (req, res, next) =>
 app.use("/api/v1/auth", requireDb, authRouter);
 app.use("/api/v1/users", requireDb, usersRouter);
 app.use("/api/v1/alerts", requireDb, alertsRouter({ io, ingest }));
+app.use("/api/v1/commands", requireDb, commandsRouter({ commands, signalSettings }));
 // État des nœuds vus sur le bus (en ligne / hors ligne, dernière télémétrie)
 app.get("/api/v1/nodes", requireUser, (req, res) => {
     res.json({ mqtt: mqttClient?.connected ?? false, nodes: registry.list() });
