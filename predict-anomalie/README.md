@@ -65,10 +65,21 @@ sentinel/predictive/status    sortie    online / offline, retenu + testament
 ## Consignes
 
 ```json
-{ "event": "modify_sensitivity", "mode": "low" }
-{ "event": "modify_window", "window_days": 14 }
+{ "event": "configure", "mode": "low", "window_days": 14 }
 { "event": "retrain" }
 ```
+
+**Un seul message pour les deux réglages**, et c'est important : un broker ne
+retient qu'un message par topic. Avec `modify_sensitivity` puis `modify_window`
+retenus successivement, seul le second survit, et la brique repartait avec la
+sensibilité par défaut après chaque redémarrage sans que rien ne le signale.
+
+Les deux champs sont facultatifs et une valeur refusée n'annule pas l'autre. Les
+anciens noms `modify_sensitivity` et `modify_window` restent acceptés, mais c'est
+`configure` qu'il faut publier en retenu.
+
+`retrain` garde son message à lui et ne doit **jamais** être retenu : sinon la
+brique réapprend à chaque reconnexion.
 
 `window_days` est un nombre de jours, **sans borne**. La brique accepte la
 consigne et publie la fenêtre effective — celle que l'historique permet
