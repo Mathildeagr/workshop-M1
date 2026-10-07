@@ -42,12 +42,23 @@ services:
       - traefik.tcp.routers.mqtt.tls=true
       - traefik.tcp.services.mqtt.loadbalancer.server.port=1883
 
+  ntp:
+    image: cturra/ntp:latest
+    container_name: sentinel-ntp
+    restart: unless-stopped
+    ports:
+      - "123:123/udp"
+    environment:
+      - NTP_SERVERS=time.cloudflare.com   # amont, si la machine a un accès sortant TODO: CHanger si pas internet voir possibilité avec routeur.
+      - LOG_LEVEL=0
+    networks:
+      - edge
+
   database:
     image: postgres:16-alpine
     container_name: sentinel-database
     restart: unless-stopped
     environment:
-      # Utilisation des noms de variables de ton collègue pour correspondre à son .env
       POSTGRES_USER: ${POSTGRES_USER:-sentinel}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans le .env racine}
       POSTGRES_DB: ${POSTGRES_DB:-sentinel_events}
