@@ -1,4 +1,5 @@
 #include "net/mqtt_client.h"
+#include <time.h>
 #include <math.h>
 
 static MqttClient *s_instance = nullptr;
@@ -9,6 +10,9 @@ static uint32_t backoff(uint32_t current, uint32_t maximum) {
   const uint32_t doubled = current * 2 > maximum ? maximum : current * 2;
   return doubled;
 }
+
+// Rappel du blocage toutes les trente secondes, pas a chaque passage de boucle.
+static const uint32_t CLOCK_NOTICE_MS = 30000;
 
 static uint32_t jitter(uint32_t delay) {
   return (delay * 3) / 4 + (uint32_t)random(delay / 2);
@@ -40,7 +44,15 @@ void MqttClient::onMessage(MQTTClient *client, char topic[], char bytes[], int l
   (void)client;
   (void)topic;
   if (s_instance == nullptr || s_instance->_commands == nullptr) return;
+
+  // Une commande declenche une alerte, qui publie son accuse. Si cet envoi part
+  // d'ici, il s'imbrique dans la lecture en cours : l'acquittement du message
+  // recu ne sort jamais, le broker le redelivre a la reconnexion suivante, et la
+  // meme commande se rejoue en boucle. On note donc l'accuse pour l'envoyer au
+  // tour de boucle suivant.
+  s_instance->_dispatching = true;
   s_instance->_commands->onCommand(bytes, (size_t)length);
+  s_instance->_dispatching = false;
 }
 
 void MqttClient::begin() {
@@ -49,7 +61,42 @@ void MqttClient::begin() {
   snprintf(_topicStatus,    sizeof(_topicStatus),    "sentinel/%s/status",    _deviceId);
   snprintf(_topicCommand,   sizeof(_topicCommand),   "sentinel/%s/command",   _deviceId);
 
-  _mqtt.begin(_host, _port, _net);
+#if MQTT_TLS
+  // Le certificat est en flash : BearSSL veut une chaine en memoire vive pour
+  // l'analyser, mais ne garde ensuite que sa forme interne.
+  const size_t pemLength = strlen_P(MQTT_CA_CERT);
+  char *pem = (char *)malloc(pemLength + 1);
+  if (pem != nullptr) {
+    strcpy_P(pem, MQTT_CA_CERT);
+    _trust = new BearSSL::X509List(pem);
+    free(pem);
+    _net.setTrustAnchors(_trust);
+  } else {
+    Serial.println(F("TLS : memoire insuffisante pour l'autorite"));
+  }
+  // Les tampons restent a leur taille par defaut, 16 Ko en reception. Les
+  // reduire n'est sur que si le serveur accepte de limiter la taille de ses
+  // enregistrements, ce que la pile TLS de Go ne sait pas faire : il en envoie
+  // alors de plus gros que le tampon, et la session se corrompt en silence.
+  // C'est ce qui donnait un "bad record MAC" cote Traefik.
+#endif
+
+  // BearSSL ne compare le nom du serveur qu'aux noms DNS du certificat, jamais
+  // a ses adresses IP : un subjectAltName en IP ne lui sert a rien, et il refuse
+  // avec « Expected server name was not found in the chain ».
+  //
+  // Se connecter par adresse plutot que par nom fait passer un nom nul a la
+  // couche TLS, ce qui saute ce controle **sans toucher a la verification de la
+  // chaine** : le certificat presente doit toujours etre signe par l'autorite
+  // embarquee. Comme cette autorite est un unique certificat auto-signe, rien
+  // d'autre ne porte sa signature, et la verifier revient a epingler ce
+  // certificat precis. On ne perd donc rien ici.
+  IPAddress address;
+  if (address.fromString(_host)) {
+    _mqtt.begin(address, _port, _net);
+  } else {
+    _mqtt.begin(_host, _port, _net);
+  }
   _mqtt.onMessageAdvanced(onMessage);
 
   // Session persistante : le broker garde notre abonnement et met de cote les
@@ -63,6 +110,25 @@ void MqttClient::begin() {
 bool MqttClient::reconnect() {
   if (!_link.isConnected()) return false;
 
+#if MQTT_TLS
+  // TLS verifie les dates de validite du certificat, et l'horloge du nœud part
+  // a 1970. Tenter la poignee de main avant la synchronisation la ferait
+  // echouer sans rien dire d'utile : on attend l'heure.
+  if (_clock == nullptr || !_clock->hasWallClock()) {
+    // Repete, et pas une seule fois : qui branche le moniteur apres coup doit
+    // comprendre pourquoi le nœud se tait. C'est la panne la plus deroutante
+    // qu'on puisse avoir ici, parce que tout le reste a l'air normal.
+    const uint32_t now = millis();
+    if (_clockNotice == 0 || (int32_t)(now - _clockNotice) >= 0) {
+      Serial.print(F("en attente de l'heure (NTP "));
+      Serial.print(NTP_SERVER);
+      Serial.println(F(") avant de joindre le broker en TLS"));
+      _clockNotice = now + CLOCK_NOTICE_MS;
+    }
+    return false;
+  }
+#endif
+
   const uint32_t now = millis();
   if ((int32_t)(now - _nextRetry) < 0) return false;
 
@@ -74,13 +140,48 @@ bool MqttClient::reconnect() {
     _connectDelay = CONNECT_MIN_MS;
     _mqtt.publish(_topicStatus, "online", true, 1);
     _mqtt.subscribe(_topicCommand, 1);
+#if MQTT_TLS
+    Serial.print(F("broker joint en TLS, topic "));
+#else
     Serial.print(F("broker joint, topic "));
-    Serial.println(_topicEvents);
+#endif
+    Serial.print(_topicEvents);
+    // Le cout du TLS est a l'execution, pas a la compilation : la poignee de
+    // main vient de passer, c'est le moment ou le tas est le plus sollicite.
+    Serial.print(F("  (tas libre "));
+    Serial.print(ESP.getFreeHeap());
+    Serial.println(F(" o)"));
   } else {
+#if MQTT_TLS
+    // Un echec TLS est muet par nature : sans ce code, on chercherait longtemps.
+    char reason[80];
+    const int err = _net.getLastSSLError(reason, sizeof(reason));
+    Serial.print(F("broker refuse, tas libre "));
+    Serial.print(ESP.getFreeHeap());
+    if (err != 0) {
+      Serial.print(F(", TLS ("));
+      Serial.print(err);
+      Serial.print(F(") "));
+      Serial.print(reason);
+    }
+    Serial.println();
+#endif
     _connectDelay = backoff(_connectDelay, CONNECT_MAX_MS);
     _nextRetry = now + jitter(_connectDelay);
   }
   return ok;
+}
+
+// Une date absente vaut mieux qu'une date fausse : tant que le NTP n'a pas
+// repondu, le champ ne figure pas et le backend horodate a la reception.
+size_t MqttClient::isoTimestamp(char *buffer, size_t len) const {
+  if (_clock == nullptr || !_clock->hasWallClock()) return 0;
+  const time_t now = (time_t)_clock->epoch();
+  if (now == 0) return 0;
+
+  struct tm utc;
+  gmtime_r(&now, &utc);
+  return strftime(buffer, len, "%Y-%m-%dT%H:%M:%SZ", &utc);
 }
 
 bool MqttClient::sendEvent(const Event &e) {
@@ -95,11 +196,15 @@ bool MqttClient::sendEvent(const Event &e) {
   char ack[40] = "";
   if (e.cmd_id[0] != '\0') snprintf(ack, sizeof(ack), ",\"cmd_id\":\"%s\"", e.cmd_id);
 
-  char body[288];
+  char stamp[40] = "";
+  char iso[24];
+  if (isoTimestamp(iso, sizeof(iso))) snprintf(stamp, sizeof(stamp), ",\"ts\":\"%s\"", iso);
+
+  char body[352];
   snprintf(body, sizeof(body),
-           "{\"event\":\"%s\",\"level\":\"%s\"%s%s%s,"
+           "{\"event\":\"%s\",\"level\":\"%s\"%s%s%s%s,"
            "\"origin\":\"%s\",\"seq\":%lu,\"uptime_s\":%lu}",
-           e.name, e.level, value, detail, ack, eventOriginName(e.origin),
+           e.name, e.level, value, detail, ack, stamp, eventOriginName(e.origin),
            (unsigned long)e.seq, (unsigned long)e.uptime_s);
 
   // QoS 1 : bloque jusqu'a l'accuse du broker, au plus ACK_TIMEOUT_MS.
@@ -138,7 +243,7 @@ void MqttClient::publishEvent(const EventRecord &src) {
   e.seq      = ++_seq;   // un trou dans la suite signale une perte au backend
   e.uptime_s = millis() / 1000UL;
 
-  if (!sendEvent(e)) enqueue(e);
+  if (_dispatching || !sendEvent(e)) enqueue(e);
 }
 
 // Les mesures ne sont pas mises en file : une valeur climatique vieille de dix
@@ -148,6 +253,11 @@ void MqttClient::publish(const TelemetryFrame &f) {
 
   char body[BUFFER_SIZE];
   int n = snprintf(body, sizeof(body), "{\"uptime_s\":%lu", (unsigned long)f.uptime_s);
+
+  char iso[24];
+  if (isoTimestamp(iso, sizeof(iso))) {
+    n += snprintf(body + n, sizeof(body) - n, ",\"ts\":\"%s\"", iso);
+  }
 
   if (f.climate_valid) {
     n += snprintf(body + n, sizeof(body) - n,

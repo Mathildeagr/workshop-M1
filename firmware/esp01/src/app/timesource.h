@@ -13,6 +13,11 @@ public:
 
   virtual void     hms(uint8_t &hh, uint8_t &mm, uint8_t &ss) const = 0;
   virtual uint32_t uptimeSeconds() const = 0;
+
+  // Secondes depuis l'epoque Unix, 0 tant qu'aucune heure n'est connue. Une
+  // source sans horloge murale garde ce defaut : on prefere ne rien dater
+  // plutot que d'inventer une date.
+  virtual uint32_t epoch() const { return 0; }
 };
 
 class UptimeClock : public ITimeSource {
