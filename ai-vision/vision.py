@@ -140,12 +140,77 @@ class AlertPolicy:
 
 
 # envoi des alertes
+def describe_send_error(err):
+    """Traduit une erreur d'envoi en cause lisible : c'est ce message qui remonte jusqu'au dashboard."""
+    import requests
+    text = str(err)
+    if isinstance(err, OSError) and "CA certificate bundle" in text:
+        return f"certificat CA introuvable ({config.API_CA_CERT}) : vérifier SENTINEL_CA_CERT"
+    if isinstance(err, requests.exceptions.SSLError):
+        if "hostname" in text or "match" in text:
+            return "TLS : le certificat du serveur ne couvre pas ce nom d'hôte (SAN manquant ?)"
+        return "TLS : certificat du serveur non reconnu (mauvais SENTINEL_CA_CERT, ou certificat par défaut de Traefik)"
+    if isinstance(err, requests.exceptions.ConnectionError):
+        return f"backend injoignable ({config.API_URL})"
+    if isinstance(err, requests.exceptions.Timeout):
+        return "backend : délai dépassé"
+    return text[:150]
+
+
+class DeliveryStats:
+    """Bilan des envois d'alertes au backend, partagé entre les redémarrages de la vision (exposé dans /status)."""
+
+    def __init__(self, enabled):
+        self._lock = threading.Lock()
+        self.enabled = enabled
+        self.sent = 0
+        self.failed = 0
+        self.last_error = None       # cause du dernier échec, effacée au premier envoi réussi
+        self.last_error_at = None
+        self.last_sent_at = None
+
+    def ok(self):
+        with self._lock:
+            self.sent += 1
+            self.last_sent_at = time.time()
+            self.last_error = None
+
+    def fail(self, message, count=True):
+        with self._lock:
+            if count:
+                self.failed += 1
+            self.last_error = message
+            self.last_error_at = time.time()
+
+    def as_dict(self):
+        with self._lock:
+            return {"enabled": self.enabled, "sent": self.sent, "failed": self.failed,
+                    "last_error": self.last_error, "last_error_at": self.last_error_at,
+                    "last_sent_at": self.last_sent_at}
+
+
+def check_api(session, verify):
+    """Test de la liaison vers le backend au démarrage (GET /health, même TLS que les alertes).
+    Retourne None si tout va bien, sinon la cause lisible."""
+    if not config.API_URL:
+        return "SENTINEL_API_URL vide"
+    health_url = config.API_URL.rsplit("/alerts", 1)[0] + "/health"
+    try:
+        r = session.get(health_url, timeout=3, verify=verify)
+        if r.status_code >= 300:
+            return f"backend : /health a répondu {r.status_code}"
+    except Exception as e:
+        return describe_send_error(e)
+    return None
+
+
 class AlertSender(threading.Thread):
     """Envoie les alertes en arrière-plan pour ne pas bloquer la lecture vidéo"""
 
-    def __init__(self, enabled):
+    def __init__(self, enabled, stats=None):
         super().__init__(daemon=True)
         self.enabled = enabled
+        self.stats = stats or DeliveryStats(enabled)
         self.queue = queue.Queue(maxsize=50)
         if enabled:
             import requests
@@ -170,9 +235,15 @@ class AlertSender(threading.Thread):
             try:
                 r = self.session.post(config.API_URL, json=payload, timeout=3, verify=self.verify)
                 if r.status_code >= 300:
-                    print(f"  API a répondu {r.status_code} : {r.text[:120]}")
+                    cause = "clé refusée (SENTINEL_API_TOKEN)" if r.status_code == 401 else f"{r.status_code} : {r.text[:120]}"
+                    print(f"  ALERTE NON TRANSMISE - API a répondu {cause}")
+                    self.stats.fail(f"backend a refusé l'alerte ({cause})")
+                else:
+                    self.stats.ok()
             except Exception as e:
-                print(f"  envoi impossible : {e}")
+                cause = describe_send_error(e)
+                print(f"  ALERTE NON TRANSMISE - {cause}")
+                self.stats.fail(cause)
 
 
 def build_payload(d, frame):
