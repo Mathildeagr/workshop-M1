@@ -1,8 +1,22 @@
 #pragma once
 
 #include <MQTT.h>
-#include <WiFiClient.h>
+
+// MQTT_TLS vient de la configuration du site : le transport se choisit a la
+// compilation, parce qu'un WiFiClientSecure n'est pas un WiFiClient.
+#include "config/secrets.h"
+
+#if MQTT_TLS
+  #include <WiFiClientSecure.h>
+  #include "config/ca_cert.h"
+  using MqttTransport = WiFiClientSecure;
+#else
+  #include <WiFiClient.h>
+  using MqttTransport = WiFiClient;
+#endif
+
 #include "app/telemetry.h"
+#include "app/timesource.h"
 #include "net/command.h"
 #include "net/network.h"
 
@@ -18,6 +32,10 @@ public:
              const char *deviceId, const char *user, const char *password);
 
   void setCommandSink(ICommandSink *sink) { _commands = sink; }
+
+  // Sans horloge, les messages partent sans date et le backend horodate a la
+  // reception. Avec, il peut remettre dans l'ordre ce qui arrive en differe.
+  void setClock(const ITimeSource *clock) { _clock = clock; }
 
   void begin() override;
   void update() override;
@@ -43,15 +61,18 @@ private:
     EventOrigin origin;
     char        cmd_id[24];
     uint32_t    seq;
-    uint32_t    uptime_s;   // horodatage relatif : le noeud n'a pas d'heure
+    uint32_t    uptime_s;   // conserve meme avec l'heure : detecte les redemarrages
   };
 
   static void onMessage(MQTTClient *client, char topic[], char bytes[], int length);
 
   bool reconnect();
+  size_t isoTimestamp(char *buffer, size_t len) const;
   bool sendEvent(const Event &e);
   void enqueue(const Event &e);
   void scheduleRetry(bool sent);
+
+  const ITimeSource *_clock = nullptr;
 
   const WifiLink &_link;
   const char     *_host;
@@ -60,10 +81,20 @@ private:
   const char     *_user;
   const char     *_password;
 
-  WiFiClient _net;
-  MQTTClient _mqtt;
+  MqttTransport _net;
+  MQTTClient    _mqtt;
+
+#if MQTT_TLS
+  // L'autorite doit survivre a la connexion : BearSSL ne la copie pas.
+  BearSSL::X509List *_trust = nullptr;
+  uint32_t           _clockNotice = 0;
+#endif
 
   ICommandSink *_commands;
+
+  // Vrai pendant le traitement d'un message recu. La bibliotheque MQTT n'est pas
+  // re-entrante : publier depuis sa fonction de reception casse le protocole.
+  bool _dispatching = false;
 
   char _topicEvents[48];
   char _topicTelemetry[48];

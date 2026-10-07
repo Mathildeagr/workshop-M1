@@ -218,6 +218,7 @@ void setup() {
   tilt.begin();
   optic.begin();
   mqtt.setCommandSink(&commands);
+  mqtt.setClock(&wallClock);
   wallClock.begin();
   telemetry.begin();
   policy.begin();

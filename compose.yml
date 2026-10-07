@@ -3,7 +3,7 @@ name: sentinel-x
 services:
 
   traefik:
-    image: traefik:v3.3
+    image: traefik:v3.6
     container_name: sentinel-traefik
     restart: unless-stopped
     command:
@@ -28,6 +28,15 @@ services:
     image: eclipse-mosquitto:2
     container_name: sentinel-mosquitto
     restart: unless-stopped
+    ports:
+      # MQTT en clair pour les nœuds IoT. Traefik n'expose que le 8883 en TLS, et
+      # l'ESP8266 ne parle pas encore MQTTS : sans ce port, il ne peut pas joindre
+      # le broker. Le sous-réseau de table est étanche et le broker refuse les
+      # connexions anonymes, mais ça reste du trafic en clair : à retirer dès que
+      # le nœud passe en MQTTS.
+      # MQTT_BIND_IP dans le .env permet de restreindre l'écoute à la seule
+      # adresse du réseau de table plutôt qu'à toutes les interfaces.
+      - "${MQTT_BIND_IP:-0.0.0.0}:1883:1883"
     volumes:
       - ./mosquitto/config:/mosquitto/config:ro
       - mosquitto-data:/mosquitto/data
@@ -84,7 +93,7 @@ services:
       CORS_ORIGINS: https://sentinel.localhost,https://localhost
       TRUST_PROXY: "1"
       # Service vision : sur l'hôte par défaut, http://ai-vision:5000 avec le profil "vision"
-      VISION_SERVICE_URL: ${VISION_SERVICE_URL:-http://host.docker.internal:5000}
+      VISION_SERVICE_URL: ${VISION_SERVICE_URL:-http://host.docker.internal:5001}
       VISION_SERVICE_TOKEN: ${VISION_SERVICE_TOKEN:-}
     extra_hosts:
       - host.docker.internal:host-gateway   # déjà fourni par Docker Desktop, nécessaire sous Linux
@@ -142,20 +151,32 @@ services:
     networks:
       - internal
 
-  # Service IA désactivé tant que son dossier (Dockerfile + code) n'existe pas : sinon "docker compose up" échoue.
-  #
-  # # données capteurs -> événements
-  # predict-anomalie:
-  #   build:
-  #     context: ./predict-anomalie
-  #   container_name: sentinel-predict-anomalie
-  #   restart: unless-stopped
-  #   depends_on:
-  #     - mosquitto
-  #     - database
-  #   networks:
-  #     - internal
-  #   #TODO: on veut un volume pour stocker le modèle entrainé ?
+  # données capteurs -> événements d'environnement
+  # Écoute les mesures sur le bus, les archive, et émet env_drift / env_anomaly /
+  # env_critical / env_cleared. Reçoit ses consignes sur sentinel/predictive/command.
+  predict-anomalie:
+    build:
+      context: ./predict-anomalie
+    container_name: sentinel-predict-anomalie
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-sentinel}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-sentinel_events}
+      PREDICT_MQTT_HOST: mosquitto
+      PREDICT_MQTT_USER: ${PREDICT_MQTT_USER:-predictive}
+      PREDICT_MQTT_PASSWORD: ${PREDICT_MQTT_PASSWORD:?PREDICT_MQTT_PASSWORD manquant dans le .env racine}
+      # Sortie de secours tant que le backend n'a pas d'abonné MQTT : il reçoit
+      # alors les alertes par sa propre route. Laisser vide pour la couper.
+      SENTINEL_API_URL: ${PREDICT_API_URL:-http://backend:3000/api/v1/alerts}
+      SENTINEL_API_TOKEN: ${PREDICT_API_KEY:-}
+    volumes:
+      - predict-models:/var/lib/predict-anomalie   # modèle entraîné, rechargé au démarrage
+    depends_on:
+      database:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    networks:
+      - internal   # pas d'exposition : le dashboard passe par le backend
 
 networks:
   edge:
@@ -169,4 +190,5 @@ volumes:
   mosquitto-data:
   mosquitto-logs:
   vision-data:
+  predict-models:
   # traefik-certs:

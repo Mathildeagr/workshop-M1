@@ -72,6 +72,14 @@ tmp/
 # Config locale du publieur caméra (contient des credentials RTSP)
 scripts/publish-camera.env
 
-# ─── Certificats TLS : générés sur chaque machine par init.sh, jamais versionnés ───
-certs/*
-!certs/.gitkeep
+# ─── Python : caches d'outils ────────────────
+.pytest_cache/
+.ruff_cache/
+
+# ─── Certificats TLS ────────────────────────────
+# Générés par init.sh et propres à chaque machine : le SAN porte son adresse IP.
+# Un certificat versionné fait sauter la génération chez le suivant, qui se
+# retrouve avec une clé absente et une adresse qui n'est pas la sienne.
+certs/*.crt
+certs/*.key
+firmware/esp01/src/config/ca_cert.h

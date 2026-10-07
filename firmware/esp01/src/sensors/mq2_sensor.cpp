@@ -32,13 +32,33 @@ uint32_t Mq2Sensor::warmupRemainingMs() const {
   return elapsed >= _warmupMs ? 0 : (_warmupMs - elapsed);
 }
 
-// Le convertisseur de l'ESP8266 saute de plusieurs unites d'un appel a l'autre.
-uint16_t Mq2Sensor::sampleAveraged() const {
-  uint32_t acc = 0;
+// Le convertisseur partage son domaine analogique avec la radio, et le bruit qui
+// en vient dure le temps d'une rafale d'emission : quelques millisecondes. Des
+// lectures prises dans une boucle serree tombent toutes dans la meme rafale et
+// sont biaisees dans le meme sens, donc les moyenner ne corrige rien.
+//
+// On espace donc les echantillons et on prend la mediane. L'espacement les fait
+// tomber dans des rafales differentes, et la mediane ignore ceux qui ont ete
+// touches au lieu de les melanger aux autres. Le delai rend aussi la main a la
+// pile reseau, qui en a besoin.
+uint16_t Mq2Sensor::sampleMedian() const {
+  uint16_t samples[SAMPLES_PER_READ];
   for (uint8_t i = 0; i < SAMPLES_PER_READ; i++) {
-    acc += (uint32_t)analogRead(_pin);
+    if (i) delay(SAMPLE_SPACING_MS);
+    samples[i] = (uint16_t)analogRead(_pin);
   }
-  return (uint16_t)(acc / SAMPLES_PER_READ);
+
+  // Tri par insertion : neuf elements, autant rester simple.
+  for (uint8_t i = 1; i < SAMPLES_PER_READ; i++) {
+    const uint16_t value = samples[i];
+    int8_t j = (int8_t)i - 1;
+    while (j >= 0 && samples[j] > value) {
+      samples[j + 1] = samples[j];
+      j--;
+    }
+    samples[j + 1] = value;
+  }
+  return samples[SAMPLES_PER_READ / 2];
 }
 
 ReadStatus Mq2Sensor::read(GasReading &out) {
@@ -48,7 +68,7 @@ ReadStatus Mq2Sensor::read(GasReading &out) {
   if (now - _lastAttempt < _interval) return ReadStatus::NotReady;
   _lastAttempt = now;
 
-  const uint16_t raw = sampleAveraged();
+  const uint16_t raw = sampleMedian();
 
   // Une entree analogique en l'air est tiree vers le bas : un zero franc et
   // persistant signale une ligne non cablee.
