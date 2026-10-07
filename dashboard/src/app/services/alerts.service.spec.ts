@@ -3,6 +3,7 @@ import { of } from 'rxjs';
 import { AlertsService, SOCKET_FACTORY } from './alerts.service';
 import { ApiService, type Alert } from './api.service';
 import { AuthService } from './auth.service';
+import { LiveStateService } from './live-state.service';
 
 type Handler = (...args: unknown[]) => void;
 
@@ -27,16 +28,22 @@ describe('AlertsService', () => {
   let socket: ReturnType<typeof fakeSocket>;
   let factory: ReturnType<typeof vi.fn>;
   let getAlerts: ReturnType<typeof vi.fn>;
+  let liveState: Record<string, ReturnType<typeof vi.fn>>;
 
   function setup(token: string | null = 'jwt') {
     socket = fakeSocket();
     factory = vi.fn(() => socket);
     getAlerts = vi.fn(() => of([alert(1)]));
+    liveState = {
+      load: vi.fn(), onNodeStatus: vi.fn(), onTelemetry: vi.fn(), onCommandStatus: vi.fn(),
+      onSeqGap: vi.fn(), onScore: vi.fn(), onPredictiveConfig: vi.fn(),
+    };
     TestBed.configureTestingModule({
       providers: [
         { provide: SOCKET_FACTORY, useValue: factory },
         { provide: ApiService, useValue: { getAlerts } },
         { provide: AuthService, useValue: { token: () => token } },
+        { provide: LiveStateService, useValue: liveState },
       ],
     });
     return TestBed.inject(AlertsService);
@@ -80,6 +87,29 @@ describe('AlertsService', () => {
     expect(service.live()).toBe(false);
     socket.emitManager('reconnect');
     expect(getAlerts).toHaveBeenCalledTimes(2);
+  });
+
+  it("relaie à l'état temps réel les événements des nœuds, des commandes et de predict-anomalie", () => {
+    const service = setup();
+    service.connect();
+    expect(liveState['load']).toHaveBeenCalledTimes(1);
+    const events: [string, string][] = [
+      ['node_status', 'onNodeStatus'], ['telemetry', 'onTelemetry'], ['command_status', 'onCommandStatus'],
+      ['seq_gap', 'onSeqGap'], ['score', 'onScore'], ['predictive_config', 'onPredictiveConfig'],
+    ];
+    for (const [event, handler] of events) {
+      socket.emit(event, { event });
+      expect(liveState[handler]).toHaveBeenCalledWith({ event });
+    }
+    socket.emitManager('reconnect');
+    expect(liveState['load']).toHaveBeenCalledTimes(2);   // état rechargé après une coupure
+  });
+
+  it('marque une alerte comme acquittée sans attendre le serveur', () => {
+    const service = setup();
+    service.connect();
+    service.markAcknowledged(1);
+    expect(service.alerts()[0].acknowledged).toBe(true);
   });
 
   it('ferme le socket à la déconnexion', () => {

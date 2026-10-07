@@ -132,3 +132,21 @@ main {
   header { margin: 0 16px; }
   main { padding: 16px; grid-template-columns: 1fr; }
 }
+
+/* Nœud hors ligne, mesures figées, événements perdus : à voir au premier coup d'œil */
+.dot.alarm { border-color: var(--magenta); background: var(--magenta); }
+.rows small.silent { color: var(--danger-text); }
+
+/* Raison d'une alerte du modèle (predict-anomalie, §10.5) */
+.alert small.reason { color: var(--text); }
+
+/* Acquittement par le superviseur */
+.alert .ack {
+  margin-left: 8px;
+  padding: 1px 8px;
+  font-size: 9px;
+  vertical-align: middle;
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+}

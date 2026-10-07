@@ -1,0 +1,56 @@
+<h2>Contrôle du boîtier</h2>
+
+@if (canControl()) {
+  @if (nodeOffline()) {
+    <p class="msg error">Boîtier {{ node() }} hors ligne : les alarmes ne peuvent pas être jouées</p>
+  }
+
+  <div class="row">
+    <label>
+      Alarme à déclencher
+      <select [(ngModel)]="sequence" name="sequence">
+        @for (g of sequences; track g.group) {
+          <optgroup [label]="g.group">
+            @for (e of g.events; track e) {
+              <option [value]="e">{{ label(e) }}</option>
+            }
+          </optgroup>
+        }
+      </select>
+    </label>
+    <button (click)="play()" [disabled]="sending()">Déclencher</button>
+  </div>
+
+  <div class="row">
+    <label>
+      Signaux de
+      <select [(ngModel)]="target" name="target">
+        <option value="tout">toutes les alarmes</option>
+        <option value="intrusion">intrusion</option>
+        <option value="sabotage">sabotage</option>
+        <option value="environnement">environnement</option>
+      </select>
+    </label>
+    <div class="buttons">
+      <button class="secondary" (click)="setSignal('deactivate', 'sonore')" [disabled]="sending()">Couper le son</button>
+      <button class="secondary" (click)="setSignal('deactivate', 'lumineux')" [disabled]="sending()">Couper la lumière</button>
+      <button class="secondary" (click)="setSignal('activate', 'tous')" [disabled]="sending()">Tout rétablir</button>
+    </div>
+  </div>
+
+  @if (message(); as m) {
+    <p class="msg" [class.ok]="m.ok" [class.error]="!m.ok">{{ m.text }}</p>
+  }
+}
+
+<h3>Ordres envoyés</h3>
+<ul class="commands">
+  @for (c of commands(); track c.id) {
+    <li [class]="c.status" [title]="c.id">
+      <span class="what">{{ commandText(c) }} <small>{{ triggerText(c) }}</small></span>
+      <span class="state">{{ statusText(c) }}</span>
+    </li>
+  } @empty {
+    <li class="muted">Aucun ordre envoyé</li>
+  }
+</ul>

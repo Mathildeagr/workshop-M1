@@ -5,6 +5,7 @@ import { of } from 'rxjs';
 import { AlertsService } from '../../services/alerts.service';
 import { ApiService, type Alert, type Metric } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
+import { LiveStateService } from '../../services/live-state.service';
 import { Dashboard } from './dashboard';
 
 describe('Dashboard', () => {
@@ -52,7 +53,7 @@ describe('Dashboard', () => {
     fixture.detectChanges();
     vi.advanceTimersByTime(0); // déclenche le premier appel du polling
     fixture.detectChanges();
-    return { app: fixture.componentInstance, el: fixture.nativeElement as HTMLElement };
+    return { app: fixture.componentInstance, el: fixture.nativeElement as HTMLElement, fixture };
   }
 
   it('affiche le titre', () => {
@@ -129,5 +130,62 @@ describe('Dashboard', () => {
     [...el.querySelectorAll('button')].find((b) => b.textContent?.includes('Déconnexion'))?.click();
     expect(TestBed.inject(AuthService).logout).toHaveBeenCalled();
     expect(navigate).toHaveBeenCalledWith(['/login']);
+  });
+
+  it('le testament MQTT prime : nœud hors ligne même si une mesure récente est en base', () => {
+    const { app, el, fixture } = setup({ getMetrics: () => of(metrics), getAlerts: () => of([]) });
+    TestBed.inject(LiveStateService).onNodeStatus({ node: 'esp01', status: 'offline', at: '' });
+    fixture.detectChanges();
+    expect(app.online()).toBe(false);
+    expect(el.querySelector('.status')?.textContent).toContain('Hors ligne');
+  });
+
+  it("affiche l'âge de la dernière mesure en permanence, puis « muet » après 3 intervalles (§10.1)", () => {
+    const { el, fixture } = setup({ getMetrics: () => of([]), getAlerts: () => of([]) });
+    TestBed.inject(LiveStateService).onTelemetry({
+      source: 'esp01', receivedAt: new Date(Date.now()).toISOString(), temperature_c: 22.4, presence: true, tilt: 'secousse', optic: 'repos',
+    });
+    vi.advanceTimersByTime(2000);
+    fixture.detectChanges();
+    const text = () => el.querySelector('.status')?.textContent ?? '';
+    expect(text()).toContain('il y a 2 s');
+    expect(text()).toContain('Secousse · Repos');
+    expect(text()).toContain('Détectée');
+    vi.advanceTimersByTime(45_000);
+    fixture.detectChanges();
+    expect(text()).toContain('Muet depuis 47 s');
+  });
+
+  it('les courbes suivent la télémétrie en direct', () => {
+    const { app } = setup({ getMetrics: () => of(metrics), getAlerts: () => of([]) });
+    const live = TestBed.inject(LiveStateService);
+    live.onTelemetry({ source: 'esp01', receivedAt: new Date().toISOString(), temperature_c: 23.1, humidity_pct: 50 });
+    live.onTelemetry({ source: 'esp01', receivedAt: new Date().toISOString(), humidity_pct: 51 });   // DHT22 en panne : pas de température
+    expect(app.temperature()).toEqual([23.1]);
+    expect(app.humidity()).toEqual([50, 51]);
+  });
+
+  it('signale les événements perdus (§10.3)', () => {
+    const { el, fixture } = setup({ getMetrics: () => of([]), getAlerts: () => of([]) });
+    TestBed.inject(LiveStateService).onSeqGap({ node: 'esp01', from: 147, to: 148, missing: 2 });
+    fixture.detectChanges();
+    expect(el.querySelector('.status')?.textContent).toContain("2 depuis l'ouverture");
+  });
+
+  it("affiche la raison d'une alerte du modèle et permet au superviseur de l'acquitter", () => {
+    const anomaly: Alert = {
+      id: 7, source: 'esp01', emitter: 'predictive', type: 'env_anomaly', level: 'warning', acknowledged: false,
+      meta: { contributions: { humidity_resid: 0.48 } }, createdAt: new Date(now).toISOString(),
+    };
+    const acknowledgeAlert = vi.fn(() => of({ ok: true }));
+    const { el } = setup({ getMetrics: () => of([]), getAlerts: () => of([anomaly]), acknowledgeAlert }, 'superviseur');
+    expect(el.querySelector('.alert .reason')?.textContent).toContain('humidité, écart au profil horaire 48 %');
+    (el.querySelector('.alert .ack') as HTMLButtonElement).click();
+    expect(acknowledgeAlert).toHaveBeenCalledWith(7);
+  });
+
+  it('un lecteur ne peut pas acquitter', () => {
+    const { el } = setup({ getMetrics: () => of([]), getAlerts: () => of(alerts) });
+    expect(el.querySelector('.alert .ack')).toBeNull();
   });
 });

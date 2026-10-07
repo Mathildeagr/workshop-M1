@@ -1,0 +1,52 @@
+.row { display: grid; gap: 8px; margin-bottom: 16px; }
+.buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+
+label { display: grid; gap: 6px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--input-bg);
+  color: var(--input-text);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+h3 {
+  margin: 20px 0 8px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.commands { list-style: none; margin: 0; padding: 0; font-size: 12px; }
+.commands li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0 7px 10px;
+  border-left: 2px solid var(--grey);
+  border-bottom: 1px solid var(--border);
+}
+.commands li:last-child { border-bottom: none; }
+.commands small { margin-left: 6px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
+.state { font-family: var(--font-mono); color: var(--muted); text-align: right; }
+
+/* Le superviseur doit voir que le système insiste, pas seulement qu'il a réussi ou échoué (§10.2) */
+.commands li.sent { border-left-color: var(--blue); }
+.commands li.retrying { border-left-color: #e0b04f; }
+.commands li.retrying .state { color: #e0b04f; }
+.commands li.acked { border-left-color: var(--teal); }
+.commands li.acked .state { color: var(--ok); }
+.commands li.failed { border-left-color: var(--magenta); }
+.commands li.failed .state { color: var(--danger-text); }
+
+.muted { color: var(--muted); }
+.msg { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+.msg.ok { color: var(--ok); }
+.msg.error { color: var(--danger-text); }

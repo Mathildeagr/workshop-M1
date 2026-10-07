@@ -1,0 +1,50 @@
+<h2>Maintenance prédictive</h2>
+
+<ul class="facts">
+  <li>
+    <strong>État du détecteur</strong>
+    <span class="stage" [class]="lastScore()?.stage ?? ''">{{ stage() }}</span>
+  </li>
+  <li>
+    <strong>Fenêtre de référence</strong>
+    @if (config()) {
+      <span [class.warn]="shortHistory()">demandée : {{ requested() }} — historique disponible : {{ covered() }}</span>
+    } @else {
+      <span class="muted">configuration pas encore reçue de predict-anomalie</span>
+    }
+  </li>
+  <li>
+    <strong>Sensibilité</strong>
+    <span>{{ config()?.sensitivity ? sensitivityLabels[config()!.sensitivity!] : '–' }}</span>
+  </li>
+</ul>
+
+@if (scoreValues().length) {
+  <app-line-chart label="Score d'anomalie" unit="%" color="#e0b04f" [values]="scoreValues()" />
+} @else {
+  <p class="muted">Aucun score reçu pour {{ node() }}</p>
+}
+
+@if (canEdit()) {
+  <form class="settings" (ngSubmit)="apply()">
+    <label>
+      Sensibilité
+      <select [(ngModel)]="sensitivity" name="sensitivity">
+        <option value="low">basse (1 alerte / 100 mesures)</option>
+        <option value="medium">moyenne (1 / 20)</option>
+        <option value="high">haute (1 / 10)</option>
+      </select>
+    </label>
+    <label>
+      Fenêtre (jours)
+      <input type="number" [(ngModel)]="windowDays" name="windowDays" min="0.1" max="3650" step="0.5" />
+    </label>
+    <div class="buttons">
+      <button type="submit" [disabled]="busy() || !(windowDays > 0)">Appliquer</button>
+      <button type="button" class="secondary" (click)="retrain()" [disabled]="busy()">Réapprendre</button>
+    </div>
+  </form>
+  @if (message(); as m) {
+    <p class="msg" [class.ok]="m.ok" [class.error]="!m.ok">{{ m.text }}</p>
+  }
+}

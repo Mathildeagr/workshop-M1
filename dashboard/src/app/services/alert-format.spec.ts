@@ -1,4 +1,4 @@
-import { toAlertView } from './alert-format';
+import { describeVariable, toAlertView } from './alert-format';
 import type { Alert } from './api.service';
 
 function alert(extra: Partial<Alert>): Alert {
@@ -28,5 +28,25 @@ describe('toAlertView', () => {
     const view = toAlertView(alert({ value: { ip: '::1', failures: 5 }, emitter: null, occurredAt: null }));
     expect(view.details).toBe('ip: ::1, failures: 5');
     expect(view.time).toBe('2026-10-07T07:06:00.000Z');
+  });
+
+  it("predict-anomalie : explique l'alerte par les 3 variables qui pèsent le plus (§10.5)", () => {
+    const view = toAlertView(alert({
+      type: 'env_anomaly', emitter: 'predictive',
+      meta: { contributions: { humidity_resid: 0.48, temperature_slope: 0.3, dew_point: 0.12, hour_sin: 0.1 } },
+    }));
+    expect(view.reason).toBe('humidité, écart au profil horaire 48 % · température, pente sur 15 min 30 % · point de rosée 12 %');
+  });
+
+  it('sans contributions, pas de raison ; libellés des alertes du backend', () => {
+    expect(toAlertView(alert({ meta: { seq: 3 } })).reason).toBe('');
+    expect(toAlertView(alert({ type: 'node_offline' })).title).toBe('Nœud hors ligne');
+    expect(toAlertView(alert({ type: 'seq_gap' })).title).toBe('Événements perdus');
+  });
+
+  it('nomme les variables du modèle', () => {
+    expect(describeVariable('temperature_slope_long')).toBe('température, pente sur 1 h');
+    expect(describeVariable('gas_ratio_spread')).toBe('gaz, agitation');
+    expect(describeVariable('inconnue')).toBe('inconnue');
   });
 });
