@@ -282,7 +282,12 @@ def main() -> int:
         vision_env = ROOT / "ai-vision" / ".env"
         if vision_env.exists():
             lines = vision_env.read_text(encoding="utf-8").splitlines()
-            fixes = {"SENTINEL_SERVICE_PORT": str(VISION_PORT), "SENTINEL_SERVICE_HOST": "0.0.0.0"}
+            fixes = {
+                "SENTINEL_SERVICE_PORT": str(VISION_PORT),
+                "SENTINEL_SERVICE_HOST": "0.0.0.0",
+                "SENTINEL_API_URL": "https://localhost/api/v1/alerts",
+                "SENTINEL_CA_CERT": "../certs/sentinel.crt",
+            }
             for index, line in enumerate(lines):
                 for key, value in fixes.items():
                     if line.startswith(f"{key}=") and line != f"{key}={value}":
@@ -419,10 +424,16 @@ VISION_SERVICE_TOKEN={vision_token}
         content = (ROOT / "ai-vision" / ".env.example").read_text(encoding="utf-8")
         for key, value in replacements.items():
             content = re.sub(rf"(?m)^{key}=.*$", f"{key}={value}", content)
+        # Le backend n'est pas joignable sur l'hote : son port 3000 reste interne
+        # au reseau Docker, seul Traefik est publie. Le service vision tourne sur
+        # l'hote et passe donc par lui, en verifiant son certificat.
         content = re.sub(
             r"(?m)^SENTINEL_API_URL=.*$",
-            "SENTINEL_API_URL=http://127.0.0.1:3000/api/v1/alerts",
+            "SENTINEL_API_URL=https://localhost/api/v1/alerts",
             content,
+        )
+        content = re.sub(
+            r"(?m)^SENTINEL_CA_CERT=.*$", "SENTINEL_CA_CERT=../certs/sentinel.crt", content
         )
         write(vision_env, content)
 
