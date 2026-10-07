@@ -60,4 +60,6 @@ module.exports = {
     },
     // Nœud qui joue les alarmes des émetteurs sans boîtier (vision) : buzzer et LED de ce nœud
     alarmNode: process.env.ALARM_NODE || "esp01",
+    // Délai d'attente de l'accusé d'une commande avant nouvelle tentative (briefing §5 : 2 s suffisent)
+    commandAckTimeoutMs: Number(process.env.COMMAND_ACK_TIMEOUT_MS) || 2000,
 };

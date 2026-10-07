@@ -1,18 +1,24 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { alertSchema } = require("../src/schemas");
+const { alertSchema, commandSchema } = require("../src/schemas");
 const { commandFor, isAllowed } = require("../src/events/rules");
 const { createDedupe } = require("../src/events/dedupe");
 const { createIngest } = require("../src/events/ingest");
+const { createSequenceTracker } = require("../src/events/sequence");
+const { createSystemAlerts } = require("../src/events/systemAlerts");
 const { createCommandPublisher } = require("../src/commands/publisher");
+const { createSignalSettings } = require("../src/commands/signalSettings");
 const { createNodeRegistry } = require("../src/nodes/registry");
 const { parseTopic, toAlertBody } = require("../src/mqtt/client");
 
 // --- Fausses dépendances : aucune base ni broker ---------------------------------------------------
 function fakes({ devices = ["esp01", "predictive", "vision"] } = {}) {
+    const statuses = {};                 // état des nœuds vu par le suivi des commandes
     const emitted = [];
     const published = [];
     const created = [];
+    const failed = [];
+    const timers = [];                   // délais d'accusé : déclenchés à la main (fireTimers)
     const io = { emit: (event, data) => emitted.push({ event, data }) };
     const mqtt = {
         connected: true,
@@ -30,13 +36,26 @@ function fakes({ devices = ["esp01", "predictive", "vision"] } = {}) {
         findByPk: async (id) => (devices.includes(id) ? { id } : null),
         update: async () => [1],
     };
-    const commands = createCommandPublisher({ io });
+    const raiseAlert = createSystemAlerts({ Alert, Device, io });
+    const signalSettings = createSignalSettings();
+    const commands = createCommandPublisher({
+        io,
+        nodeStatus: (node) => statuses[node] ?? "unknown",
+        onFailed: (cmd) => failed.push(cmd),
+        setTimer: (fn) => { timers.push(fn); return fn; },
+        clearTimer: (fn) => { const i = timers.indexOf(fn); if (i >= 0) timers.splice(i, 1); },
+    });
     commands.attach(mqtt);
-    const ingest = createIngest({ Alert, Device, io, commands, alarmNode: "esp01" });
-    return { ingest, commands, emitted, published, created, Alert, Device, io };
+    const ingest = createIngest({ Alert, Device, io, commands, signalSettings, raiseAlert, alarmNode: "esp01" });
+    const fireTimers = () => timers.splice(0).forEach((fn) => fn());
+    return {
+        ingest, commands, signalSettings, raiseAlert, mqtt, io, Alert, Device,
+        emitted, published, created, failed, statuses, timers, fireTimers,
+    };
 }
 
 const parse = (body) => alertSchema.parse(body);
+const statusesOf = (f) => f.emitted.filter((e) => e.event === "command_status").map((e) => e.data.status);
 
 // --- Règles -------------------------------------------------------------------------------------
 test("règles : un événement de sabotage du nœud lui est renvoyé en commande", () => {
@@ -126,8 +145,9 @@ test("pipeline : l'écho origin command acquitte la commande, sans alerte ni nou
     assert.equal(echo.command.id, first.command.id);
     assert.equal(f.created.length, 1);       // l'écho n'est pas un nouvel événement
     assert.equal(f.published.length, 1);     // et ne repart jamais en commande
-    assert.ok(f.emitted.some((e) => e.event === "command_status" && e.data.status === "acked"));
+    assert.deepEqual(statusesOf(f), ["sent", "acked"]);
     assert.equal(f.commands.pending.size, 0);
+    assert.equal(f.timers.length, 0);        // plus de délai en cours
 });
 
 test("pipeline : l'écho d'une commande intrusion_* venant du nœud est accepté (il n'est pas émis par le nœud)", async () => {
@@ -168,8 +188,127 @@ test("pipeline : broker injoignable -> alerte enregistrée quand même, commande
     f.commands.attach({ connected: false });
     const result = await f.ingest(parse({ type: "tamper_removed", origin: "sensor", seq: 5, uptime_s: 50 }), "esp01");
     assert.equal(result.kind, "created");
-    assert.equal(result.command, null);
-    assert.ok(f.emitted.some((e) => e.event === "command_status" && e.data.status === "failed"));
+    assert.equal(result.command.status, "failed");
+    assert.equal(result.command.failure, "broker_down");
+    assert.equal(f.failed.length, 1);
+});
+
+// --- Suivi des commandes (phase 3) -------------------------------------------------------------------
+test("commandes : sans accusé, 2 retentes avec le même id, puis abandon explicite", () => {
+    const f = fakes();
+    const sent = f.commands.send("esp01", { event: "tamper_opened" });
+    f.fireTimers();   // délai 1 dépassé -> tentative 2
+    f.fireTimers();   // délai 2 dépassé -> tentative 3
+    f.fireTimers();   // délai 3 dépassé -> abandon
+
+    assert.equal(f.published.length, 3);
+    assert.ok(f.published.every((p) => p.message.id === sent.id));     // rejouer : même id, sans effet de bord
+    assert.deepEqual(statusesOf(f), ["sent", "retrying", "retrying", "failed"]);
+    assert.equal(f.failed.length, 1);
+    assert.equal(f.failed[0].failure, "no_ack");
+    assert.equal(f.commands.pending.size, 0);
+    assert.equal(f.timers.length, 0);
+});
+
+test("commandes : un accusé arrivé pendant les retentes clôt la commande", () => {
+    const f = fakes();
+    const sent = f.commands.send("esp01", { event: "tamper_opened" });
+    f.fireTimers();                                    // tentative 2
+    const acked = f.commands.acknowledge("esp01", sent.id);
+    assert.equal(acked.status, "acked");
+    assert.equal(acked.attempts, 2);
+    f.fireTimers();                                    // aucun délai restant
+    assert.equal(f.published.length, 2);
+    assert.equal(f.failed.length, 0);
+});
+
+test("commandes : nœud déjà hors ligne -> échec immédiat, rien n'est publié", () => {
+    const f = fakes();
+    f.statuses.esp01 = "offline";
+    const sent = f.commands.send("esp01", { event: "tamper_removed" });
+    assert.equal(sent.status, "failed");
+    assert.equal(sent.failure, "node_offline");
+    assert.equal(f.published.length, 0);
+    assert.equal(f.timers.length, 0);
+});
+
+test("commandes : nœud passé hors ligne pendant l'attente -> abandon sans nouvelle tentative", () => {
+    const f = fakes();
+    f.commands.send("esp01", { event: "tamper_opened" });
+    f.statuses.esp01 = "offline";
+    f.fireTimers();
+    assert.equal(f.published.length, 1);
+    assert.equal(f.failed[0].failure, "node_offline");
+});
+
+test("commandes : un accusé d'un autre nœud ou inconnu n'acquitte rien", () => {
+    const f = fakes();
+    const sent = f.commands.send("esp01", { event: "tamper_opened" });
+    assert.equal(f.commands.acknowledge("esp02", sent.id), null);
+    assert.equal(f.commands.acknowledge("esp01", "cmd-00000000"), null);
+    assert.equal(f.commands.pending.size, 1);
+});
+
+// --- Coupures de signal rejouées après node_boot -------------------------------------------------------
+test("coupures : rejouées dans l'ordre après node_boot, le même réglage remplace l'ancien", async () => {
+    const f = fakes();
+    f.signalSettings.record("esp01", { event: "deactivate", target: "sabotage", signal: "sonore" });
+    f.signalSettings.record("esp01", { event: "deactivate", target: "intrusion", signal: "tous" });
+    f.signalSettings.record("esp01", { event: "activate", target: "sabotage", signal: "sonore" });
+
+    const result = await f.ingest(parse({ type: "node_boot", origin: "sensor", seq: 0, uptime_s: 2 }), "esp01");
+    const replayed = f.published.map((p) => [p.message.event, p.message.target, p.message.signal]);
+    assert.deepEqual(replayed, [["deactivate", "intrusion", "tous"], ["activate", "sabotage", "sonore"]]);
+    assert.ok(result.replayed.every((c) => c.status === "sent"));
+});
+
+test("coupures : 'activate tout tous' efface tout, plus rien à rejouer", async () => {
+    const f = fakes();
+    f.signalSettings.record("esp01", { event: "deactivate", target: "tout", signal: "sonore" });
+    f.signalSettings.record("esp01", { event: "activate" });
+    await f.ingest(parse({ type: "node_boot", origin: "sensor", seq: 0, uptime_s: 2 }), "esp01");
+    assert.equal(f.published.length, 0);
+});
+
+test("schéma des commandes manuelles : noms jouables et réglages, rien d'autre", () => {
+    assert.equal(commandSchema.safeParse({ node: "esp01", event: "intrusion_prohibited" }).success, true);
+    assert.deepEqual(commandSchema.parse({ node: "esp01", event: "deactivate" }),
+        { node: "esp01", event: "deactivate", target: "tout", signal: "tous" });
+    assert.equal(commandSchema.safeParse({ node: "esp01", event: "reboot" }).success, false);
+    assert.equal(commandSchema.safeParse({ node: "esp01", event: "tamper_opened", target: "tout" }).success, false);
+    assert.equal(commandSchema.safeParse({ node: "esp01", event: "deactivate", signal: "fort" }).success, false);
+});
+
+// --- Séquence -------------------------------------------------------------------------------------------
+test("séquence : saut de 146 à 149 = 2 événements perdus ; rejeu différé et doublon ne sont pas des trous", () => {
+    const check = createSequenceTracker();
+    assert.equal(check("esp01", "tamper_opened", 146), null);
+    assert.deepEqual(check("esp01", "tamper_opened", 149), { from: 147, to: 148, missing: 2 });
+    assert.equal(check("esp01", "tamper_opened", 148), null);   // arrivé en retard
+    assert.equal(check("esp01", "tamper_opened", 149), null);   // doublon
+    assert.equal(check("esp01", "tamper_opened", 150), null);
+    assert.equal(check("esp01", "node_boot", 0), null);         // redémarrage : seq repart à zéro
+    assert.equal(check("esp01", "tamper_opened", 1), null);
+    assert.equal(check("esp01", "tamper_opened", undefined), null);
+});
+
+test("séquence : un trou crée une alerte seq_gap et l'événement est quand même traité", async () => {
+    const f = fakes();
+    await f.ingest(parse({ type: "tamper_suspected", origin: "sensor", seq: 146, uptime_s: 400 }), "esp01");
+    const result = await f.ingest(parse({ type: "tamper_opened", origin: "sensor", seq: 149, uptime_s: 412 }), "esp01");
+    assert.equal(result.kind, "created");
+    const gap = f.created.find((a) => a.type === "seq_gap");
+    assert.equal(gap.value, 2);
+    assert.equal(gap.level, "warning");
+    assert.ok(f.emitted.some((e) => e.event === "seq_gap" && e.data.missing === 2));
+});
+
+test("séquence : les échos de commande comptent dans la suite (pas de faux trou)", async () => {
+    const f = fakes();
+    const first = await f.ingest(parse({ type: "tamper_opened", origin: "sensor", seq: 10, uptime_s: 100 }), "esp01");
+    await f.ingest(parse({ type: "tamper_opened", origin: "command", cmd_id: first.command.id, seq: 11, uptime_s: 100 }), "esp01");
+    await f.ingest(parse({ type: "tamper_cleared", origin: "sensor", seq: 12, uptime_s: 130 }), "esp01");
+    assert.equal(f.created.some((a) => a.type === "seq_gap"), false);
 });
 
 // --- Topics MQTT ----------------------------------------------------------------------------------
@@ -190,7 +329,7 @@ test("trame du bus : event devient type, le reste est conservé", () => {
 // --- Statut des nœuds -------------------------------------------------------------------------------
 test("statut : offline en direct après online -> alerte critique node_offline ; rejeu retenu -> aucune alerte", async () => {
     const f = fakes();
-    const registry = createNodeRegistry({ Alert: f.Alert, Device: f.Device, io: f.io });
+    const registry = createNodeRegistry({ io: f.io, raiseAlert: f.raiseAlert });
     await registry.handleStatus("esp01", "offline", true);   // état retenu rejoué à l'abonnement
     assert.equal(f.created.length, 0);
     await registry.handleStatus("esp01", "online", false);   // retour après coupure
@@ -204,7 +343,7 @@ test("statut : offline en direct après online -> alerte critique node_offline ;
 
 test("statut : première connexion d'un nœud -> pas d'alerte node_online", async () => {
     const f = fakes();
-    const registry = createNodeRegistry({ Alert: f.Alert, Device: f.Device, io: f.io });
+    const registry = createNodeRegistry({ io: f.io, raiseAlert: f.raiseAlert });
     await registry.handleStatus("esp01", "online", false);
     assert.equal(f.created.length, 0);
     assert.equal(registry.status("esp01").status, "online");

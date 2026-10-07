@@ -1,9 +1,10 @@
 // Pipeline unique de réception des événements, quel que soit le transport (MQTT ou POST /api/v1/alerts) :
-// accusé de commande ? -> droits de l'émetteur -> enregistrement -> dashboard -> commande d'alarme.
+// séquence -> accusé de commande ? -> droits de l'émetteur -> enregistrement -> dashboard -> commande d'alarme.
 
 const { toAlertRecord, formatAlert } = require("./alertRecord");
 const { commandFor, isAllowed } = require("./rules");
 const { createDedupe } = require("./dedupe");
+const { createSequenceTracker } = require("./sequence");
 
 class IngestError extends Error {
     constructor(status, message) {
@@ -13,18 +14,35 @@ class IngestError extends Error {
 }
 
 /**
- * @param {object} deps  { Alert, Device, io, commands, alarmNode }
+ * @param {object} deps  { Alert, Device, io, commands, signalSettings, raiseAlert, alarmNode }
  */
-function createIngest({ Alert, Device, io, commands, alarmNode, isDuplicate = createDedupe() }) {
+function createIngest({
+    Alert, Device, io, commands, signalSettings, raiseAlert, alarmNode,
+    isDuplicate = createDedupe(), checkSequence = createSequenceTracker(),
+}) {
+    /** Trou dans seq : des événements du nœud ne sont jamais arrivés (§3.1). Signalé, sans bloquer l'événement. */
+    async function reportGap(node, gap) {
+        console.warn(`[sequence] ${node} : ${gap.missing} événement(s) perdu(s) (seq ${gap.from} à ${gap.to})`);
+        io.emit("seq_gap", { node, ...gap });
+        await raiseAlert({
+            deviceId: node, type: "seq_gap", level: "warning", value: gap.missing,
+            detail: gap.missing === 1 ? `événement seq ${gap.from} perdu` : `événements seq ${gap.from} à ${gap.to} perdus`,
+        });
+    }
+
     /**
      * @param {object} body     événement validé par alertSchema (champ "type", pas "event")
      * @param {string} emitter  identité de l'émetteur : clé d'appareil ou topic MQTT, jamais le corps
      * @param {object} [opts]   { ip } pour la route HTTP
-     * @returns {Promise<{ kind: "ack"|"duplicate"|"created", alert?, command? }>}
+     * @returns {Promise<{ kind: "ack"|"duplicate"|"created", alert?, command?, replayed? }>}
      */
     return async function ingest(body, emitter, { ip } = {}) {
+        // 0. Séquence : les échos de commande incrémentent aussi seq, on les compte donc avant tout tri
+        const gap = checkSequence(emitter, body.type, body.seq);
+        if (gap) await reportGap(emitter, gap);
+
         // 1. Écho d'une commande : c'est un accusé d'exécution, pas un nouveau fait (briefing §5).
-        //    Traité avant tout le reste : il porte un nom (intrusion_*, env_*) que le nœud n'émet pas lui-même.
+        //    Traité avant les droits : il porte un nom (intrusion_*, env_*) que le nœud n'émet pas lui-même.
         if (body.origin === "command") {
             const command = commands.acknowledge(emitter, body.cmd_id);
             return { kind: "ack", command };
@@ -50,14 +68,16 @@ function createIngest({ Alert, Device, io, commands, alarmNode, isDuplicate = cr
         const payload = formatAlert(alert);
         io.emit("alert", payload);
 
-        // 5. Alarme physique sur le boîtier
+        // 5. Redémarrage du nœud : il a oublié les coupures de son et de lumière, on les lui renvoie (§4.2)
+        let replayed = [];
+        if (record.type === "node_boot") {
+            replayed = signalSettings.toReplay(emitter).map((cmd) => commands.send(emitter, cmd, { trigger: "replay" }));
+        }
+
+        // 6. Alarme physique sur le boîtier
         const rule = commandFor(record, alarmNode);
-        const sent = rule ? commands.send(rule.node, rule.command) : null;
-        return {
-            kind: "created",
-            alert: payload,
-            command: sent ? { id: sent.id, node: sent.node, event: sent.event } : null,
-        };
+        const command = rule ? commands.send(rule.node, rule.command) : null;
+        return { kind: "created", alert: payload, command, replayed };
     };
 }
 

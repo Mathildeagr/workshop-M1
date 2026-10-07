@@ -4,6 +4,7 @@ const User = require("./User");
 const Device = require("./Device");
 const SensorReading = require("./SensorReading");
 const Alert = require("./Alert");
+const Command = require("./Command");
 
 Role.hasMany(User, { foreignKey: "roleId" });
 User.belongsTo(Role, { foreignKey: "roleId" });
@@ -18,4 +19,8 @@ Alert.belongsTo(Device, { foreignKey: { name: "deviceId", allowNull: false } });
 User.hasMany(Alert, { foreignKey: "acknowledgedBy", onDelete: "SET NULL" });
 Alert.belongsTo(User, { as: "acknowledger", foreignKey: "acknowledgedBy" });
 
-module.exports = { sequelize, Role, User, Device, SensorReading, Alert };
+// Superviseur à l'origine d'une commande manuelle (null pour les commandes automatiques)
+User.hasMany(Command, { foreignKey: "issuedBy", onDelete: "SET NULL" });
+Command.belongsTo(User, { as: "issuer", foreignKey: "issuedBy" });
+
+module.exports = { sequelize, Role, User, Device, SensorReading, Alert, Command };
