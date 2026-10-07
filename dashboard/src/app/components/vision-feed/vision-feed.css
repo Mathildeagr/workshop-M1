@@ -39,6 +39,7 @@ img {
 
 .msg { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
 .msg.error { color: var(--danger-text); }
+.msg.warn { color: #e0b04f; }
 
 /* Mêmes couleurs que les cadres dessinés par le service vision */
 .tag.autorise { color: var(--ok); }

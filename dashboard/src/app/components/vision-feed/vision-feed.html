@@ -21,6 +21,16 @@
   @if (s.error) {
     <p class="msg error">{{ s.error }}</p>
   }
+  <!-- Une détection qui n'arrive pas au backend ne déclenche aucune alarme : à voir immédiatement -->
+  @if (s.alerts; as a) {
+    @if (!a.enabled) {
+      <p class="msg warn">Envoi des alertes désactivé (SENTINEL_API_ENABLED)</p>
+    } @else if (a.last_error) {
+      <p class="msg error">Alertes non transmises : {{ a.last_error }}@if (a.failed) { ({{ a.failed }} perdue(s)) }</p>
+    } @else if (a.sent) {
+      <p class="msg">{{ a.sent }} alerte(s) transmise(s) au backend</p>
+    }
+  }
   @if (s.running) {
     <p class="msg">
       {{ s.persons }} personne(s)

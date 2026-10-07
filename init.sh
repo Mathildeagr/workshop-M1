@@ -4,19 +4,33 @@ echo " Initialisation de l'environnement sécurisé Sentinel-X..."
 # 1. Création des dossiers nécessaires
 mkdir -p certs mosquitto/config
 
-# 2. Génération du certificat TLS (uniquement s'il n'existe pas déjà)
-if [ ! -f "./certs/sentinel.localhost.crt" ]; then
-    echo "Génération des certificats TLS Traefik..."
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ./certs/sentinel.localhost.key -out ./certs/sentinel.localhost.crt -subj "/C=FR/ST=Occitanie/L=Montpellier/O=AetherCorp/CN=sentinel.localhost"
+# 2. Certificat TLS (uniquement s'il n'existe pas déjà)
+# Noms attendus par traefik/dynamic/tls.yml : certs/sentinel.crt et certs/sentinel.key.
+# Les SAN couvrent toutes les façons d'appeler le serveur : sans eux, la vérification TLS échoue
+# (vision -> https://localhost, ESP8266 -> IP du PC serveur, navigateur -> sentinel.localhost).
+# IP du PC serveur sur le réseau de table : SENTINEL_SERVER_IP=... ./init.sh pour la changer.
+SERVER_IP="${SENTINEL_SERVER_IP:-192.168.10.10}"
+if [ ! -f "./certs/sentinel.crt" ] || [ ! -f "./certs/sentinel.key" ]; then
+    echo "Génération du certificat TLS (SAN : sentinel.localhost, localhost, 127.0.0.1, ${SERVER_IP})..."
+    MSYS_NO_PATHCONV=1 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout ./certs/sentinel.key -out ./certs/sentinel.crt \
+        -subj "/C=FR/ST=Occitanie/L=Montpellier/O=AetherCorp/CN=sentinel.localhost" \
+        -addext "subjectAltName=DNS:sentinel.localhost,DNS:localhost,IP:127.0.0.1,IP:${SERVER_IP}" \
+        -addext "basicConstraints=critical,CA:TRUE"
 fi
 
-# 3. Génération du mot de passe chiffré pour le broker IoT
-echo "Configuration des accès MQTT..."
-MSYS_NO_PATHCONV=1 docker run --rm -v "${PWD}/mosquitto/config:/config" eclipse-mosquitto:2 mosquitto_passwd -c -b /config/passwd capteur_esp Sentinel2026
+# 3. Comptes du broker IoT : créés seulement si le fichier n'existe pas encore.
+# Le recréer (-c) effacerait les autres comptes (backend, predictive...) ajoutés depuis.
+if [ ! -f "./mosquitto/config/passwd" ]; then
+    echo "Configuration des accès MQTT..."
+    MSYS_NO_PATHCONV=1 docker run --rm -v "${PWD}/mosquitto/config:/config" eclipse-mosquitto:2 mosquitto_passwd -c -b /config/passwd capteur_esp Sentinel2026
 
-# 4. Correction des droits pour résoudre le bug Windows/Docker
-echo "Correction des permissions de lecture..."
-MSYS_NO_PATHCONV=1 docker run --rm -v "${PWD}/mosquitto/config:/config" alpine chmod 644 /config/passwd
+    # 4. Correction des droits pour résoudre le bug Windows/Docker
+    echo "Correction des permissions de lecture..."
+    MSYS_NO_PATHCONV=1 docker run --rm -v "${PWD}/mosquitto/config:/config" alpine chmod 644 /config/passwd
+else
+    echo "Comptes MQTT déjà configurés (mosquitto/config/passwd conservé)"
+fi
 
 # 5. Démarrage de l'infrastructure
 echo "Lancement des conteneurs..."

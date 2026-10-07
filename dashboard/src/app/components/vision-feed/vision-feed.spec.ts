@@ -86,4 +86,17 @@ describe('VisionFeed', () => {
     const { el } = setup(base, 'lecteur');
     expect(el.querySelector('button')).toBeNull();
   });
+
+  it("signale les alertes détectées mais non transmises au backend, avec la cause", () => {
+    const { el } = setup({ ...base, alerts: { enabled: true, sent: 0, failed: 4, last_error: 'certificat CA introuvable', last_error_at: 1, last_sent_at: null } });
+    expect(el.querySelector('.msg.error')?.textContent).toContain('Alertes non transmises : certificat CA introuvable (4 perdue(s))');
+  });
+
+  it("confirme les alertes transmises, et prévient si l'envoi est désactivé", () => {
+    const ok = setup({ ...base, alerts: { enabled: true, sent: 3, failed: 0, last_error: null, last_error_at: null, last_sent_at: 1 } });
+    expect(ok.el.textContent).toContain('3 alerte(s) transmise(s) au backend');
+    TestBed.resetTestingModule();
+    const off = setup({ ...base, alerts: { enabled: false, sent: 0, failed: 0, last_error: null, last_error_at: null, last_sent_at: null } });
+    expect(off.el.querySelector('.msg.warn')?.textContent).toContain('Envoi des alertes désactivé');
+  });
 });

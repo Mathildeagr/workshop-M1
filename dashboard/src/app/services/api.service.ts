@@ -48,6 +48,15 @@ export interface VisionStatus {
   detections: { name: string | null; status: string; kind: 'face' | 'person'; score: number }[];
   ms: number;
   at: number | null;
+  /** Bilan des envois d'alertes au backend : un échec ici veut dire « détecté mais jamais signalé ». */
+  alerts?: {
+    enabled: boolean;
+    sent: number;
+    failed: number;
+    last_error: string | null;
+    last_error_at: number | null;
+    last_sent_at: number | null;
+  };
 }
 
 // --- Nœuds, commandes, predict-anomalie (intégration esp01 / predict-anomalie) ---

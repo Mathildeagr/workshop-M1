@@ -72,4 +72,7 @@ ENROLL_TIMEOUT_S = 30
 API_URL = os.getenv("SENTINEL_API_URL", "").strip()
 API_TOKEN = os.getenv("SENTINEL_API_TOKEN", "").strip()
 API_CA_CERT = os.getenv("SENTINEL_CA_CERT", "").strip()
+# Chemin relatif (ex : ../certs/sentinel.crt) : pris depuis le dossier ai-vision, pour marcher sur toutes les machines
+if API_CA_CERT and not Path(API_CA_CERT).is_absolute():
+    API_CA_CERT = str((BASE_DIR / API_CA_CERT).resolve())
 API_ENABLED = os.getenv("SENTINEL_API_ENABLED", "0") == "1" and bool(API_URL)

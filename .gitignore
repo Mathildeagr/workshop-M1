@@ -71,3 +71,7 @@ tmp/
 
 # Config locale du publieur caméra (contient des credentials RTSP)
 scripts/publish-camera.env
+
+# ─── Certificats TLS : générés sur chaque machine par init.sh, jamais versionnés ───
+certs/*
+!certs/.gitkeep

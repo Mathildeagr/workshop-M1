@@ -134,7 +134,7 @@ class VisionRunner:
             if self.use_yolo:
                 from person_detector import PersonDetector
                 detector = PersonDetector()
-            sender = BackendAlertSender(enabled=self.send_alerts)
+            sender = BackendAlertSender(enabled=self.send_alerts, stats=DELIVERY)
             sender.start()
             cap = vision.open_camera(source)
         except Exception as e:  # modèle manquant, caméra introuvable...
@@ -180,8 +180,8 @@ class VisionRunner:
 class BackendAlertSender(vision.AlertSender):
     """Envoie les alertes au format attendu par POST /api/v1/alerts du backend (clé dans X-API-Key)."""
 
-    def __init__(self, enabled):
-        super().__init__(enabled=enabled and bool(config.API_URL))
+    def __init__(self, enabled, stats=None):
+        super().__init__(enabled=enabled and bool(config.API_URL), stats=stats)
         if self.enabled:
             self.session.headers.pop("Authorization", None)
             self.session.headers["X-API-Key"] = config.API_TOKEN
@@ -202,6 +202,7 @@ class BackendAlertSender(vision.AlertSender):
 
 
 runner: VisionRunner = None          # créé dans main()
+DELIVERY = vision.DeliveryStats(enabled=False)   # bilan des envois d'alertes, réglé dans main()
 faces_lock = threading.Lock()        # une seule modification de la base de visages à la fois
 _engine = None
 
@@ -251,7 +252,7 @@ def health():
 @app.get("/status")
 def status():
     return jsonify(enabled=runner.enabled, running=runner.running, enrolling=runner.enrolling,
-                   error=runner.error, **runner.last)
+                   error=runner.error, alerts=DELIVERY.as_dict(), **runner.last)
 
 
 @app.post("/start")
@@ -385,6 +386,21 @@ def delete_face(name):
     return "", 204
 
 
+def preflight_alerts():
+    """Vérifie dès le lancement que les alertes pourront partir : sinon l'échec resterait silencieux
+    jusqu'à la première détection. Le résultat est aussi visible dans /status (donc sur le dashboard)."""
+    sender = BackendAlertSender(enabled=True, stats=DELIVERY)
+    problem = vision.check_api(sender.session, sender.verify)
+    if problem:
+        DELIVERY.fail(problem, count=False)
+        print("=" * 72)
+        print(f"[alertes] ATTENTION : les alertes ne pourront PAS être transmises au backend")
+        print(f"[alertes] {problem}")
+        print("=" * 72)
+    else:
+        print(f"[alertes] liaison backend OK ({config.API_URL})")
+
+
 def main():
     global runner
     parser = argparse.ArgumentParser(description="Service HTTP vision Sentinel-X")
@@ -399,8 +415,15 @@ def main():
     if len(SERVICE_TOKEN) < 32:
         raise SystemExit("SENTINEL_SERVICE_TOKEN manquant ou trop court (32 caractères min) dans le .env")
 
+    send_alerts = config.API_ENABLED and not args.no_api
+    DELIVERY.enabled = send_alerts
+    if send_alerts:
+        preflight_alerts()
+    else:
+        print("[alertes] envoi au backend désactivé (SENTINEL_API_ENABLED=0 ou --no-api)")
+
     runner = VisionRunner(use_yolo=config.USE_YOLO and not args.no_yolo,
-                          send_alerts=config.API_ENABLED and not args.no_api,
+                          send_alerts=send_alerts,
                           source=config.CAMERA_INDEX)
     if not args.no_autostart:
         runner.start()
