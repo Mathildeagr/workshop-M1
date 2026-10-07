@@ -28,6 +28,13 @@ WRITE_INTERVAL_S = 5.0
 WRITE_BUFFER = 5400          # trois heures de mesures : de quoi tenir une panne de base
 RETRY_DATABASE_S = 15.0
 
+# Tant qu'aucun modele n'existe, la brique est aveugle : elle reessaie souvent.
+# Une tentative qui echoue coute une requete de comptage, pas un apprentissage.
+# Sur l'intervalle normal d'une heure, un demarrage sur base vide — ce qui est le
+# cas de tout premier deploiement — laissait la brique muette pendant une heure
+# sans que rien ne dise qu'elle allait reessayer.
+TRAINING_RETRY_S = 120.0
+
 
 class Service:
     def __init__(self, settings: Settings) -> None:
@@ -232,10 +239,14 @@ class Service:
 
     async def _training(self) -> None:
         while True:
+            # Apprendre quand il y a de quoi, pas quand l'horloge le dit.
+            delay = (
+                self.settings.retrain_interval_s
+                if self.trainer.model.ready
+                else TRAINING_RETRY_S
+            )
             with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(
-                    self._retrain.wait(), timeout=self.settings.retrain_interval_s
-                )
+                await asyncio.wait_for(self._retrain.wait(), timeout=delay)
             self._retrain.clear()
             if not self._schema_ready:
                 continue

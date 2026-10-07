@@ -9,12 +9,14 @@ a repondre.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 
 import joblib
 
 from predict_anomalie.config import RuntimeConfig, Settings
 from predict_anomalie.detect import AnomalyModel, InsufficientHistory
+from predict_anomalie.detect.forest import MIN_ROWS
 from predict_anomalie.store import Database
 
 log = logging.getLogger(__name__)
@@ -34,6 +36,9 @@ class Trainer:
         self._path = Path(settings.model_dir) / ARTIFACT
         self.model = AnomalyModel()
         self.last_error: str | None = None
+        self.last_attempt: datetime | None = None
+        self.available = 0
+        self._announced: str | None = None
 
     # -- cycle de vie -------------------------------------------------------
 
@@ -62,7 +67,18 @@ class Trainer:
 
     def train(self) -> bool:
         """Ajuste sur la fenetre demandee. Renvoie False si l'historique ne suffit pas."""
+        self.last_attempt = datetime.now(UTC)
         requested = self._runtime.window_days
+
+        # Compter avant de charger : quand l'historique est trop court, on le sait
+        # pour une requete au lieu de rapatrier la fenetre et de construire les
+        # variables pour rien. Et le message dit alors ou on en est, ce qui est
+        # beaucoup plus utile qu'une erreur.
+        _, _, self.available = self._database.coverage()
+        if self.available < MIN_ROWS:
+            self._report(f"{self.available} minutes en base, {MIN_ROWS} necessaires")
+            return False
+
         minutes = self._database.load_window(requested)
         jump_scales = self._database.jump_scales(JUMP_DAYS)
 
@@ -70,15 +86,16 @@ class Trainer:
         try:
             meta = candidate.fit(minutes, requested, jump_scales=jump_scales)
         except InsufficientHistory as error:
-            self.last_error = str(error)
-            self._runtime.effective_days = 0.0 if not self.model.ready else self._runtime.effective_days
-            log.warning("apprentissage impossible sur %.2f jours : %s", requested, error)
+            if not self.model.ready:
+                self._runtime.effective_days = 0.0
+            self._report(str(error))
             return False
 
         # On ne remplace le modele en service qu'une fois le nouveau pret : un
         # apprentissage rate ne doit pas rendre la brique muette.
         self.model = candidate
         self.last_error = None
+        self._announced = None
         self._runtime.effective_days = meta.effective_days
         self.persist()
 
@@ -92,13 +109,31 @@ class Trainer:
             log.info("pas de calibration de saut : la table brute est encore vide")
         return True
 
+    def _report(self, reason: str) -> None:
+        """Signale un apprentissage impossible, sans repeter le meme message.
+
+        La boucle reessaie toutes les deux minutes tant qu'il n'y a pas de modele :
+        annoncer chaque echec noierait le journal.
+        """
+        self.last_error = reason
+        if reason != self._announced:
+            log.info("apprentissage reporte : %s", reason)
+            self._announced = reason
+
     # -- lecture pour l'API -------------------------------------------------
 
     def state(self) -> dict:
+        # L'horodatage de la tentative compte autant que son resultat : sans lui,
+        # un echec d'il y a une heure se lit comme un echec de maintenant.
+        attempt = {
+            "attempted_at": self.last_attempt.isoformat() if self.last_attempt else None,
+            "minutes_available": self.available,
+            "minutes_required": MIN_ROWS,
+        }
         meta = self.model.meta
         if meta is None:
-            return {"ready": False, "error": self.last_error}
-        return {
+            return {"ready": False, "error": self.last_error} | attempt
+        return attempt | {
             "ready": self.model.ready,
             "detector": "isolation-forest",
             "trained_at": meta.trained_at.isoformat(),

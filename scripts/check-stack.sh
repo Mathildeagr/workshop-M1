@@ -50,7 +50,8 @@ bus() {  # bus <outil> <utilisateur> <mot de passe> <arguments...>
 }
 
 sql() { docker compose exec -T -e PGPASSWORD="$PG_PASSWORD" database \
-          psql -h 127.0.0.1 -U "$PG_USER" -d "$PG_DB" -tAc "$1" 2>/dev/null | tr -d ' \r'; }
+          psql -h 127.0.0.1 -U "$PG_USER" -d "$PG_DB" -tAc "$1" 2>/dev/null \
+          | tr -d '\r' | sed 's/^ *//; s/ *$//'; }
 
 api() { docker compose exec -T predict-anomalie python -c "
 import json, sys, urllib.request
@@ -82,7 +83,9 @@ if [[ "$MODE" == watch ]]; then
     rows=$(sql 'select count(*) from sensor_readings'); rows=${rows:-0}
     minutes=$(sql 'select count(*) from sensor_minutes'); minutes=${minutes:-0}
     alerts=$(sql 'select count(*) from alerts'); alerts=${alerts:-0}
-    last=$(sql "select to_char(measured_at,'HH24:MI:SS')||' '||round(temperature::numeric,1)||' C '||round(humidity::numeric,1)||' %'
+    last=$(sql "select round(temperature::numeric,1)||' C   '||round(humidity::numeric,1)||' %   '
+                     ||coalesce(round(gas_ratio::numeric,2)::text,'gaz absent')
+                     ||'   il y a '||round(extract(epoch from now()-measured_at))||' s'
                 from sensor_readings order by measured_at desc limit 1")
 
     rate=""
@@ -103,7 +106,12 @@ if [[ "$MODE" == watch ]]; then
       printf '  modèle     prêt — %s minutes, %s jours couverts\n' \
         "$(jget rows <<<"$model")" "$(jget effective_days <<<"$model")"
     else
-      printf '  modèle     \033[33mabsent\033[0m — %s\n' "$(jget error <<<"$model")"
+      available=$(jget minutes_available <<<"$model")
+      required=$(jget minutes_required <<<"$model")
+      printf '  modèle     \033[33mpas encore\033[0m — %s minutes sur %s nécessaires\n' \
+        "${available:-?}" "${required:-?}"
+      printf '             dernière tentative %s, nouvelle dans 2 min\n' \
+        "$(jget attempted_at <<<"$model" | cut -dT -f2 | cut -d. -f1)"
     fi
 
     python3 -c "
@@ -226,9 +234,11 @@ if [[ "$(jget ready <<<"$model")" == "True" ]]; then
     && ok "calibration des sauts en place" \
     || note "calibration des sauts absente : quelques minutes de brut suffisent, elle se rattrape au repli"
 else
-  ko "pas de modèle : $(jget error <<<"$model")"
-  note "il faut deux heures de mesures, ou un historique de synthèse :"
-  note "  ./scripts/check-stack.sh --seed 30"
+  available=$(jget minutes_available <<<"$model")
+  required=$(jget minutes_required <<<"$model")
+  ko "pas encore de modèle : ${available:-?} minutes en base sur ${required:-?} nécessaires"
+  note "dernière tentative : $(jget attempted_at <<<"$model"), nouvelle dans 2 min"
+  note "pour ne pas attendre deux heures de mesures : ./scripts/check-stack.sh --seed 30"
 fi
 
 title "Bilan"

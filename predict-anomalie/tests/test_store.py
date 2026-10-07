@@ -201,3 +201,38 @@ def test_un_capteur_en_chauffe_n_empeche_pas_l_ecriture(database):
         gas, ratio, temperature = cur.fetchone()
     assert gas is None and ratio is None
     assert temperature == pytest.approx(22.4, abs=0.01)
+
+
+def test_un_historique_trop_court_dit_ou_il_en_est(database, tmp_path):
+    """Un echec d'apprentissage doit etre lisible et datable.
+
+    Sans le compte et l'horodatage, un echec d'il y a une heure se lit comme un
+    echec de maintenant — c'est ce qui nous a fait croire a une panne.
+    """
+    database.insert_minutes(synthesize(0.05, device_id="esp01"))   # 72 minutes
+    settings = Settings(_env_file=None, model_dir=str(tmp_path), window_days=7.0)
+    trainer = Trainer(database, RuntimeConfig(settings), settings)
+
+    assert trainer.train() is False
+
+    state = trainer.state()
+    assert state["ready"] is False
+    assert state["minutes_available"] == 72
+    assert state["minutes_required"] > 72
+    assert "72" in state["error"]
+    assert state["attempted_at"] is not None
+
+
+def test_le_meme_echec_n_est_annonce_qu_une_fois(database, tmp_path, caplog):
+    """La boucle reessaie toutes les deux minutes : repeter le message noierait
+    le journal."""
+    settings = Settings(_env_file=None, model_dir=str(tmp_path))
+    trainer = Trainer(database, RuntimeConfig(settings), settings)
+
+    with caplog.at_level("INFO", logger="predict_anomalie.trainer"):
+        trainer.train()
+        trainer.train()
+        trainer.train()
+
+    reports = [r for r in caplog.records if "apprentissage reporte" in r.message]
+    assert len(reports) == 1
