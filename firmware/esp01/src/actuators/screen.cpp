@@ -9,7 +9,9 @@
 #define FONT_MED   u8g2_font_logisoso16_tn
 // Les deux polices precedentes ne portent que des chiffres : il en faut une qui
 // sache ecrire des lettres a cette taille.
-#define FONT_TITLE u8g2_font_7x13B_tr
+// La variante _tf porte les accents ; la _tr s'arrete a l'ASCII et mutilerait
+// « Non autorise » ou « Camera obstruee ».
+#define FONT_TITLE u8g2_font_7x13B_tf
 
 static const int16_t  W         = 128;
 static const int16_t  H         = 64;
@@ -29,6 +31,37 @@ static const uint32_t LOGO_FRAME_MS = 40;
 // jaunes, le reste bleu. Rien dans le logiciel ne choisit cela, U8g2 ne connait
 // qu'allume ou eteint. La seule facon de colorer quelque chose est de le placer.
 static const int16_t BAND_H = 16;
+
+// « Alerte levee » dure le temps d'un court motif sonore : on la retient assez
+// longtemps pour qu'elle se lise.
+static const uint32_t CLEARED_HOLD_MS = 3500;
+
+// Ce que chaque evenement affiche. L'ecran ne connait ni les capteurs ni la
+// vision : il traduit un nom, rien de plus.
+struct AlertText {
+  const char *event;
+  const char *title;
+  const char *detail;
+};
+
+static const AlertText ALERTS[] = {
+  { "intrusion_unknown",      "INTRUSION !", "Inconnu"           },
+  { "intrusion_unidentified", "INTRUSION !", "Non reconnu"       },
+  { "intrusion_prohibited",   "INTRUSION !", "Non autorisé"      },
+
+  { "tamper_suspected",       "SABOTAGE !",  "Mouvement détecté" },
+  { "tamper_opened",          "SABOTAGE !",  "Caméra obstruée"   },
+  { "tamper_removed",         "SABOTAGE !",  "Reposez la boîte"  },
+
+  { "env_drift",              "ANOMALIE !",  "Environnementale"  },
+  { "env_anomaly",            "DANGER !",    "Environnemental"   },
+  { "env_critical",           "DANGER",      "IMMINENT !"        },
+};
+
+static bool isCleared(const char *event) {
+  const size_t n = strlen(event);
+  return n >= 8 && strcmp(event + n - 8, "_cleared") == 0;
+}
 
 StatusScreen::StatusScreen(uint8_t i2cAddress, uint32_t pageMs)
   : _u8g2(U8G2_R0, U8X8_PIN_NONE),
@@ -61,12 +94,14 @@ bool StatusScreen::begin() {
   _lastDraw   = 0;
   _logoStart  = 0;
   _nextLogo   = millis() + LOGO_EVERY_MS;
+  _alertEvent = nullptr;
+  _alertUntil = 0;
   return true;
 }
 
 void StatusScreen::drawCentered(int16_t xOff, int16_t y, const char *s) {
-  const int16_t w = (int16_t)_u8g2.getStrWidth(s);
-  _u8g2.drawStr(xOff + (W - w) / 2, y, s);
+  const int16_t w = (int16_t)_u8g2.getUTF8Width(s);
+  _u8g2.drawUTF8(xOff + (W - w) / 2, y, s);
 }
 
 void StatusScreen::drawThermometer(int16_t x, int16_t y) {
@@ -139,6 +174,32 @@ void StatusScreen::drawSystem(int16_t x, const ScreenData &d) {
   _u8g2.setFont(FONT_SMALL);
   _u8g2.drawStr(x + 26, H - 3,
                 d.network_text != nullptr ? d.network_text : "hors ligne");
+}
+
+// Une alerte remplace la page courante : c'est la seule chose a regarder.
+void StatusScreen::drawAlert(const char *event) {
+  _u8g2.setFont(FONT_TITLE);
+
+  if (isCleared(event)) {
+    drawCentered(0, 38, "Alerte levée");
+    _u8g2.drawFrame(0, 20, W, 24);
+    return;
+  }
+
+  const AlertText *found = nullptr;
+  for (const AlertText &a : ALERTS) {
+    if (strcmp(a.event, event) == 0) { found = &a; break; }
+  }
+  if (found == nullptr) {
+    drawCentered(0, 38, event);
+    return;
+  }
+
+  // Le titre monte dans la bande haute de la dalle, la seule qui soit jaune.
+  // C'est le seul choix de couleur dont on dispose, autant le donner a l'alerte.
+  drawCentered(0, 13, found->title);
+  _u8g2.drawHLine(0, BAND_H, W);
+  drawCentered(0, 42, found->detail);
 }
 
 void StatusScreen::drawPage(uint8_t page, int16_t x, const ScreenData &d) {
@@ -227,6 +288,27 @@ void StatusScreen::update(const ScreenData &d) {
   if (!_present) return;
 
   const uint32_t now = millis();
+
+  if (d.alert_event != nullptr) {
+    _alertEvent = d.alert_event;
+    _alertUntil = isCleared(d.alert_event) ? now + CLEARED_HOLD_MS : 0;
+    _logoStart  = 0;   // une alerte passe avant le logo
+  } else if (_alertEvent != nullptr
+             && (_alertUntil == 0 || (int32_t)(now - _alertUntil) >= 0)) {
+    _alertEvent = nullptr;
+    _lastSwitch = now;   // la rotation reprend sans defiler aussitot
+    _lastDraw   = 0;
+  }
+
+  if (_alertEvent != nullptr) {
+    if ((int32_t)(now - _lastDraw) >= (int32_t)DRAW_MS) {
+      _u8g2.clearBuffer();
+      drawAlert(_alertEvent);
+      _u8g2.sendBuffer();
+      _lastDraw = now;
+    }
+    return;
+  }
 
   // On n'interrompt jamais une transition en cours : la couper se verrait.
   if (_logoStart == 0 && !_sliding && (int32_t)(now - _nextLogo) >= 0) {

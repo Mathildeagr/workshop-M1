@@ -11,6 +11,10 @@ struct ScreenData {
   const char *network_text;   // adresse IP, ou l'etat de la connexion
   uint8_t     hh, mm, ss;
   bool     wall_clock;
+
+  // Evenement d'alarme en cours, nullptr s'il n'y en a pas. L'ecran ne sait pas
+  // ce qu'il represente : il recoit un nom et cherche quoi afficher.
+  const char *alert_event;
 };
 
 class StatusScreen {
@@ -33,6 +37,7 @@ private:
   void drawClimate(int16_t x, const ScreenData &d);
   void drawSystem(int16_t x, const ScreenData &d);
   void drawIdentity(int16_t x);
+  void drawAlert(const char *event);
 
   // Une image de l'animation du logo, a l'avancement donne. Partagee par
   // l'ouverture bloquante et le rejeu periodique.
@@ -57,4 +62,7 @@ private:
 
   uint32_t _logoStart;   // 0 : pas d'animation en cours
   uint32_t _nextLogo;
+
+  const char *_alertEvent;   // alerte affichée, nullptr si aucune
+  uint32_t    _alertUntil;   // 0 : tant que l'alarme joue ; sinon échéance
 };

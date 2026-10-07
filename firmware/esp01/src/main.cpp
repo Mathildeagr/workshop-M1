@@ -204,6 +204,7 @@ static void refreshScreen() {
   screenData.wall_clock   = wallClock.hasWallClock();
   screenData.wifi_up      = link.isConnected();
   screenData.network_text = link.statusText();
+  screenData.alert_event  = alarmCurrentLabel();
   screen.update(screenData);
 }
 
