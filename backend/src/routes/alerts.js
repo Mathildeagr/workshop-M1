@@ -3,28 +3,26 @@ const { Alert, Device } = require("../models");
 const { requireUser, requireRole, requireDevice } = require("../middleware/auth");
 const validate = require("../middleware/validate");
 const { alertSchema, alertQuerySchema, idParamSchema } = require("../schemas");
-
-// Format unique envoyé au dashboard (REST et Socket.io)
-function formatAlert(alert) {
-    return {
-        id: alert.id,
-        source: alert.deviceId,
-        type: alert.type,
-        level: alert.level,
-        value: alert.value,
-        acknowledged: alert.acknowledged,
-        acknowledgedBy: alert.acknowledgedBy,
-        acknowledgedAt: alert.acknowledgedAt,
-        createdAt: alert.createdAt,
-    };
-}
+const { toAlertRecord, formatAlert, AlertRecordError } = require("../events/alertRecord");
 
 module.exports = function alertsRouter(io) {
     const router = express.Router();
 
     // Route obligatoire du sujet : réservée aux appareils (ESP8266, scripts IA)
     router.post("/", requireDevice, validate(alertSchema), async (req, res) => {
-        const alert = await Alert.create({ ...req.body, deviceId: req.device.id });
+        let record;
+        try {
+            record = toAlertRecord(req.body, req.device.id);
+        } catch (err) {
+            if (err instanceof AlertRecordError) return res.status(err.status).json({ error: err.message });
+            throw err;
+        }
+        // Le nœud concerné doit exister (clé étrangère, et pas d'alerte sur un boîtier inventé)
+        if (record.deviceId !== req.device.id && !(await Device.findByPk(record.deviceId))) {
+            return res.status(400).json({ error: `Source inconnue : ${record.deviceId}` });
+        }
+
+        const alert = await Alert.create(record);
         await Device.update({ lastSeen: new Date(), ip: req.ip }, { where: { id: req.device.id } });
 
         const payload = formatAlert(alert);

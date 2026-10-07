@@ -4,6 +4,7 @@ const http = require("http");
 const bcrypt = require("bcryptjs");
 const { Server } = require("socket.io");
 const { sequelize, Role, User, Device } = require("./models");
+const upgradeSchema = require("./schemaUpgrade");
 const { applySecurity, errorHandler, corsOptions } = require("./middleware/security");
 const { verifyToken } = require("./middleware/auth");
 const authRouter = require("./routes/auth");
@@ -83,6 +84,7 @@ async function initDatabase() {
     try {
         await sequelize.authenticate();
         await sequelize.sync();   // crée les tables manquantes (ne modifie jamais une table existante)
+        await upgradeSchema();    // ajoute les colonnes apparues depuis (tables déjà existantes)
         for (const name of ["admin", "superviseur", "lecteur"]) {
             await Role.findOrCreate({ where: { name } });
         }

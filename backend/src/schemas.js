@@ -16,7 +16,12 @@ const createUserSchema = z.object({
 
 const primitive = z.union([z.number().finite(), z.boolean(), z.string().max(100), z.null()]);
 
-// La source n'est pas dans le body : elle vient de la clé d'appareil (anti-usurpation)
+// rates et contributions (predict-anomalie) : nom de variable -> nombre
+const numericMap = z.record(identifier, z.number().finite())
+    .refine((o) => Object.keys(o).length <= 24, "24 champs maximum");
+
+// Contrat commun aux briques (nœud esp01, predict-anomalie, vision) : voir docs du briefing d'intégration.
+// L'émetteur vient toujours de la clé d'appareil ou du topic MQTT, jamais du corps.
 const alertSchema = z.object({
     type: identifier,
     level: z.enum(["info", "warning", "critical"]).default("info"),
@@ -25,6 +30,29 @@ const alertSchema = z.object({
         primitive,
         z.record(identifier, primitive).refine((o) => Object.keys(o).length <= 10, "10 champs maximum"),
     ]).optional(),
+
+    // Communs aux briques
+    detail: z.string().max(100).optional(),                 // capteur à l'origine, ou explication courte
+    origin: z.enum(["sensor", "command", "model"]).optional(),
+    source: identifier.optional(),                          // nœud concerné, si différent de l'émetteur (voir routes/alerts.js)
+    ts: z.iso.datetime({ offset: true }).optional(),        // horodatage de l'émetteur, s'il a une horloge
+
+    // Nœud esp01
+    uptime_s: z.number().int().nonnegative().optional(),
+    seq: z.number().int().nonnegative().optional(),
+    cmd_id: identifier.optional(),                          // accusé d'exécution d'une commande
+
+    // Brique predict-anomalie
+    detector: z.string().max(50).optional(),
+    score: z.number().min(0).max(1).optional(),
+    magnitude: z.number().nonnegative().optional(),
+    velocity: z.number().nonnegative().optional(),
+    jump: z.number().nonnegative().optional(),
+    sensitivity: z.enum(["low", "medium", "high"]).optional(),
+    window_days: z.number().positive().optional(),
+    effective_days: z.number().nonnegative().optional(),
+    rates: numericMap.optional(),
+    contributions: numericMap.optional(),
 }).strict();
 
 // Visages (service vision) : mêmes règles de nom que côté Python
