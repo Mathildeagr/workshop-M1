@@ -96,17 +96,37 @@ if ! docker compose exec -T -e PGPASSWORD="$PG_PASSWORD" database \
     docker compose restart backend predict-anomalie >/dev/null 2>&1
 fi
 
-# 6. Service vision (ai-vision/server.py) sur l'hôte : Docker Desktop ne transmet pas la webcam aux conteneurs
-# Hôte, port et jeton lus depuis ai-vision/.env (SENTINEL_SERVICE_*)
-if curl -s -o /dev/null --max-time 2 http://127.0.0.1:5000/health; then
-    echo "Service vision déjà lancé sur le port 5000"
+# 6. Service vision (ai-vision/server.py) sur l'hôte
+#
+# Docker Desktop ne transmet pas la webcam aux conteneurs, le service tourne donc
+# sur la machine et le backend l'appelle par host.docker.internal.
+#
+# On verifie que c'est bien NOTRE service qui repond, et pas n'importe quoi sur
+# le port : le recepteur AirPlay de macOS occupe le 5000 et repond 403 a tout,
+# ce qui faisait passer un port squatte pour un service en marche.
+VISION_PORT=$(grep '^SENTINEL_SERVICE_PORT=' ai-vision/.env 2>/dev/null | cut -d= -f2)
+VISION_PORT="${VISION_PORT:-5001}"
+
+if curl -s --max-time 2 "http://127.0.0.1:$VISION_PORT/health" 2>/dev/null | grep -q '"status"'; then
+    echo "Service vision déjà lancé sur le port $VISION_PORT"
+elif lsof -nP -iTCP:"$VISION_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "Port $VISION_PORT déjà occupé par autre chose que le service vision."
+    echo "   Changer SENTINEL_SERVICE_PORT dans ai-vision/.env, et VISION_SERVICE_URL"
+    echo "   dans backend/.env et le .env racine."
 elif [ -x ./ai-vision/.venv/Scripts/python.exe ]; then
     echo "Lancement du service vision (fenêtre séparée)..."
     (cd ai-vision && powershell.exe -NoProfile -Command \
         "Start-Process -FilePath '.venv\Scripts\python.exe' -ArgumentList 'server.py' -WindowStyle Minimized")
 elif [ -x ./ai-vision/.venv/bin/python ]; then
-    echo "Lancement du service vision (logs : ai-vision/server.log)..."
+    echo "Lancement du service vision sur le port $VISION_PORT (logs : ai-vision/server.log)..."
     (cd ai-vision && nohup .venv/bin/python server.py > server.log 2>&1 &)
+    for _ in $(seq 1 15); do
+        curl -s --max-time 1 "http://127.0.0.1:$VISION_PORT/health" 2>/dev/null | grep -q '"status"' && break
+        sleep 1
+    done
+    curl -s --max-time 2 "http://127.0.0.1:$VISION_PORT/health" 2>/dev/null | grep -q '"status"' \
+        && echo "   Service vision en ligne" \
+        || echo "   Le service vision n'a pas démarré, voir ai-vision/server.log"
 else
     echo "Service vision non lancé : venv ai-vision/.venv introuvable (voir ai-vision/README.md)"
 fi

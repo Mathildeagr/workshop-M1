@@ -39,6 +39,10 @@ DEVICE_IDS = ("esp01", "vision", "predictive")
 
 ALNUM = string.ascii_letters + string.digits
 
+# Le port 5000 est pris par le recepteur AirPlay de macOS, qui repond 403 a tout
+# et se fait passer pour un service en marche. Le service vision ecoute ailleurs.
+VISION_PORT = 5001
+
 
 def alnum(length: int) -> str:
     """Lettres et chiffres seulement.
@@ -259,8 +263,10 @@ def main() -> int:
             timezone=quoted(known.get("NTP_TIMEZONE", "")) or "CET-1CEST,M3.5.0,M10.5.0/3",
         )
 
-        changed = after != before
-        if changed:
+        # Deux changements distincts : seul celui du firmware impose un reflashage.
+        firmware = after != before
+        other = False
+        if firmware:
             secrets_h.write_text(after, encoding="utf-8")
             secrets_h.chmod(0o600)
 
@@ -269,14 +275,30 @@ def main() -> int:
             if not ca_header.exists() or ca_header.read_text(encoding="utf-8") != fresh:
                 ca_header.write_text(fresh, encoding="utf-8")
                 ca_header.chmod(0o644)
-                changed = True
+                firmware = True
 
-        if changed:
+        # Le port et l'adresse d'ecoute du service vision ne sont pas des
+        # secrets non plus : on les realigne au passage.
+        vision_env = ROOT / "ai-vision" / ".env"
+        if vision_env.exists():
+            lines = vision_env.read_text(encoding="utf-8").splitlines()
+            fixes = {"SENTINEL_SERVICE_PORT": str(VISION_PORT), "SENTINEL_SERVICE_HOST": "0.0.0.0"}
+            for index, line in enumerate(lines):
+                for key, value in fixes.items():
+                    if line.startswith(f"{key}=") and line != f"{key}={value}":
+                        lines[index] = f"{key}={value}"
+                        other = True
+            vision_env.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        if other:
+            print("Réglages du service vision réalignés.")
+        if firmware:
             print(f"Configuration du nœud réalignée sur {host_ip}.")
             print("Les mots de passe sont inchangés. Le nœud doit être reflashé :")
             print("  cd firmware/esp01 && pio run -t upload")
             return 10
-        print(f"Configuration du nœud déjà à jour pour {host_ip}.")
+        if not other:
+            print(f"Configuration déjà à jour pour {host_ip}.")
         return 0
 
     tls = not args.no_tls
@@ -368,7 +390,7 @@ MQTT_USERNAME=backend
 MQTT_PASSWORD={mqtt_passwords["backend"]}
 
 # Service vision (ai-vision/server.py)
-VISION_SERVICE_URL=http://127.0.0.1:5000
+VISION_SERVICE_URL=http://127.0.0.1:{VISION_PORT}
 VISION_SERVICE_TOKEN={vision_token}
 """)
 
@@ -378,6 +400,11 @@ VISION_SERVICE_TOKEN={vision_token}
     replacements = {
         "SENTINEL_API_TOKEN": device_keys["vision"],
         "SENTINEL_SERVICE_TOKEN": vision_token,
+        "SENTINEL_SERVICE_PORT": str(VISION_PORT),
+        # Le backend tourne dans un conteneur et arrive par host.docker.internal,
+        # donc pas par la boucle locale : le service doit ecouter plus largement.
+        # Il reste protege par son jeton de service.
+        "SENTINEL_SERVICE_HOST": "0.0.0.0",
     }
     if vision_env.exists():
         lines = vision_env.read_text(encoding="utf-8").splitlines()
