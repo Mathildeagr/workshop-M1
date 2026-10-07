@@ -18,6 +18,9 @@ const { createNodeRegistry } = require("./nodes/registry");
 const { createSystemAlerts } = require("./events/systemAlerts");
 const { createSignalSettings } = require("./commands/signalSettings");
 const commandsRouter = require("./routes/commands");
+const predictiveRouter = require("./routes/predictive");
+const { metricsRouter, readingsRouter } = require("./routes/readings");
+const { createPredictiveState } = require("./predictive/state");
 const { connectMqtt } = require("./mqtt/client");
 
 let dbReady = false;
@@ -59,7 +62,12 @@ const commands = createCommandPublisher({
         }).catch((err) => console.error("[commandes] alerte d'échec non créée :", err.message));
     },
 });
-const ingest = createIngest({ Alert, Device, io, commands, signalSettings, raiseAlert, alarmNode: config.alarmNode });
+const ingest = createIngest({
+    Alert, Device, io, commands, signalSettings, raiseAlert,
+    alarmNode: config.alarmNode,
+    estimateUptime: registry.estimateUptime,
+});
+const predictive = createPredictiveState({ io });
 
 // Route de test (publique, ne révèle rien de sensible)
 app.get("/api/v1/health", (req, res) => {
@@ -74,6 +82,10 @@ app.use("/api/v1/auth", requireDb, authRouter);
 app.use("/api/v1/users", requireDb, usersRouter);
 app.use("/api/v1/alerts", requireDb, alertsRouter({ io, ingest }));
 app.use("/api/v1/commands", requireDb, commandsRouter({ commands, signalSettings }));
+// Mesures écrites par predict-anomalie : courbes en direct (metrics) et historique à la minute (readings)
+app.use("/api/v1/metrics", requireDb, metricsRouter());
+app.use("/api/v1/readings", requireDb, readingsRouter());
+app.use("/api/v1/predictive", predictiveRouter({ state: predictive, getMqtt: () => mqttClient }));
 // État des nœuds vus sur le bus (en ligne / hors ligne, dernière télémétrie)
 app.get("/api/v1/nodes", requireUser, (req, res) => {
     res.json({ mqtt: mqttClient?.connected ?? false, nodes: registry.list() });
@@ -118,7 +130,7 @@ function startMqtt() {
         console.warn("MQTT_USERNAME absent : backend sans MQTT (alertes reçues par HTTP uniquement)");
         return;
     }
-    mqttClient = connectMqtt({ ...config.mqtt, ingest, registry });
+    mqttClient = connectMqtt({ ...config.mqtt, ingest, registry, predictive });
     commands.attach(mqttClient);
 }
 
