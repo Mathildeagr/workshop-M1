@@ -11,6 +11,9 @@ static uint32_t backoff(uint32_t current, uint32_t maximum) {
   return doubled;
 }
 
+// Rappel du blocage toutes les trente secondes, pas a chaque passage de boucle.
+static const uint32_t CLOCK_NOTICE_MS = 30000;
+
 static uint32_t jitter(uint32_t delay) {
   return (delay * 3) / 4 + (uint32_t)random(delay / 2);
 }
@@ -63,7 +66,11 @@ void MqttClient::begin() {
   } else {
     Serial.println(F("TLS : memoire insuffisante pour l'autorite"));
   }
-  _net.setBufferSizes(TLS_RX_BUFFER, TLS_TX_BUFFER);
+  // Les tampons restent a leur taille par defaut, 16 Ko en reception. Les
+  // reduire n'est sur que si le serveur accepte de limiter la taille de ses
+  // enregistrements, ce que la pile TLS de Go ne sait pas faire : il en envoie
+  // alors de plus gros que le tampon, et la session se corrompt en silence.
+  // C'est ce qui donnait un "bad record MAC" cote Traefik.
 #endif
 
   _mqtt.begin(_host, _port, _net);
@@ -85,9 +92,15 @@ bool MqttClient::reconnect() {
   // a 1970. Tenter la poignee de main avant la synchronisation la ferait
   // echouer sans rien dire d'utile : on attend l'heure.
   if (_clock == nullptr || !_clock->hasWallClock()) {
-    if (_waitingForClock) {
-      Serial.println(F("TLS : en attente de l'heure avant de joindre le broker"));
-      _waitingForClock = false;
+    // Repete, et pas une seule fois : qui branche le moniteur apres coup doit
+    // comprendre pourquoi le nœud se tait. C'est la panne la plus deroutante
+    // qu'on puisse avoir ici, parce que tout le reste a l'air normal.
+    const uint32_t now = millis();
+    if (_clockNotice == 0 || (int32_t)(now - _clockNotice) >= 0) {
+      Serial.print(F("en attente de l'heure (NTP "));
+      Serial.print(NTP_SERVER);
+      Serial.println(F(") avant de joindre le broker en TLS"));
+      _clockNotice = now + CLOCK_NOTICE_MS;
     }
     return false;
   }
@@ -118,14 +131,17 @@ bool MqttClient::reconnect() {
   } else {
 #if MQTT_TLS
     // Un echec TLS est muet par nature : sans ce code, on chercherait longtemps.
-    char reason[64];
+    char reason[80];
     const int err = _net.getLastSSLError(reason, sizeof(reason));
+    Serial.print(F("broker refuse, tas libre "));
+    Serial.print(ESP.getFreeHeap());
     if (err != 0) {
-      Serial.print(F("TLS refuse ("));
+      Serial.print(F(", TLS ("));
       Serial.print(err);
-      Serial.print(F(") : "));
-      Serial.println(reason);
+      Serial.print(F(") "));
+      Serial.print(reason);
     }
+    Serial.println();
 #endif
     _connectDelay = backoff(_connectDelay, CONNECT_MAX_MS);
     _nextRetry = now + jitter(_connectDelay);
