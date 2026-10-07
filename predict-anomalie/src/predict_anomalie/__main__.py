@@ -17,11 +17,13 @@ from predict_anomalie.service import Service
 log = logging.getLogger("predict_anomalie")
 
 
+GRACE_S = 5.0
+
+
 async def serve(service: Service, server: uvicorn.Server) -> None:
-    tasks = [
-        asyncio.create_task(service.run(), name="service"),
-        asyncio.create_task(server.serve(), name="api"),
-    ]
+    worker = asyncio.create_task(service.run(), name="service")
+    api = asyncio.create_task(server.serve(), name="api")
+
     loop = asyncio.get_running_loop()
     stop = asyncio.Event()
     for received in (signal.SIGINT, signal.SIGTERM):
@@ -29,15 +31,21 @@ async def serve(service: Service, server: uvicorn.Server) -> None:
             loop.add_signal_handler(received, stop.set)
 
     waiter = asyncio.create_task(stop.wait(), name="arret")
-    done, _ = await asyncio.wait([*tasks, waiter], return_when=asyncio.FIRST_COMPLETED)
-
+    done, _ = await asyncio.wait([worker, api, waiter], return_when=asyncio.FIRST_COMPLETED)
     if waiter in done:
         log.info("arret demande")
+
+    # On laisse uvicorn fermer ses connexions de lui-meme. L'annuler en pleine
+    # phase de demarrage ou d'arret fait remonter une trace depuis starlette,
+    # sans consequence mais a chaque extinction.
     server.should_exit = True
-    for task in tasks:
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(asyncio.shield(api), timeout=GRACE_S)
+
+    for task in (worker, api, waiter):
         task.cancel()
-    for task in (*tasks, waiter):
-        with contextlib.suppress(asyncio.CancelledError, Exception):
+    for task in (worker, api, waiter):
+        with contextlib.suppress(asyncio.CancelledError):
             await task
 
 

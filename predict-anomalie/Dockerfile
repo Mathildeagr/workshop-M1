@@ -1,6 +1,6 @@
 # Deux etapes : les dependances sont installees a part du code, pour que modifier
 # une ligne de Python ne reinstalle pas scikit-learn.
-FROM ghcr.io/astral-sh/uv:0.12-python3.13-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
