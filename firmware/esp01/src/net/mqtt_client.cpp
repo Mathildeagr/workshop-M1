@@ -73,7 +73,22 @@ void MqttClient::begin() {
   // C'est ce qui donnait un "bad record MAC" cote Traefik.
 #endif
 
-  _mqtt.begin(_host, _port, _net);
+  // BearSSL ne compare le nom du serveur qu'aux noms DNS du certificat, jamais
+  // a ses adresses IP : un subjectAltName en IP ne lui sert a rien, et il refuse
+  // avec « Expected server name was not found in the chain ».
+  //
+  // Se connecter par adresse plutot que par nom fait passer un nom nul a la
+  // couche TLS, ce qui saute ce controle **sans toucher a la verification de la
+  // chaine** : le certificat presente doit toujours etre signe par l'autorite
+  // embarquee. Comme cette autorite est un unique certificat auto-signe, rien
+  // d'autre ne porte sa signature, et la verifier revient a epingler ce
+  // certificat precis. On ne perd donc rien ici.
+  IPAddress address;
+  if (address.fromString(_host)) {
+    _mqtt.begin(address, _port, _net);
+  } else {
+    _mqtt.begin(_host, _port, _net);
+  }
   _mqtt.onMessageAdvanced(onMessage);
 
   // Session persistante : le broker garde notre abonnement et met de cote les
