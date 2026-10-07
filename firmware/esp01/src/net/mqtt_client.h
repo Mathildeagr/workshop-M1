@@ -3,6 +3,7 @@
 #include <MQTT.h>
 #include <WiFiClient.h>
 #include "app/telemetry.h"
+#include "app/timesource.h"
 #include "net/command.h"
 #include "net/network.h"
 
@@ -18,6 +19,10 @@ public:
              const char *deviceId, const char *user, const char *password);
 
   void setCommandSink(ICommandSink *sink) { _commands = sink; }
+
+  // Sans horloge, les messages partent sans date et le backend horodate a la
+  // reception. Avec, il peut remettre dans l'ordre ce qui arrive en differe.
+  void setClock(const ITimeSource *clock) { _clock = clock; }
 
   void begin() override;
   void update() override;
@@ -43,15 +48,18 @@ private:
     EventOrigin origin;
     char        cmd_id[24];
     uint32_t    seq;
-    uint32_t    uptime_s;   // horodatage relatif : le noeud n'a pas d'heure
+    uint32_t    uptime_s;   // conserve meme avec l'heure : detecte les redemarrages
   };
 
   static void onMessage(MQTTClient *client, char topic[], char bytes[], int length);
 
   bool reconnect();
+  size_t isoTimestamp(char *buffer, size_t len) const;
   bool sendEvent(const Event &e);
   void enqueue(const Event &e);
   void scheduleRetry(bool sent);
+
+  const ITimeSource *_clock = nullptr;
 
   const WifiLink &_link;
   const char     *_host;

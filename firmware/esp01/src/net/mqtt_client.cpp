@@ -1,4 +1,5 @@
 #include "net/mqtt_client.h"
+#include <time.h>
 #include <math.h>
 
 static MqttClient *s_instance = nullptr;
@@ -83,6 +84,18 @@ bool MqttClient::reconnect() {
   return ok;
 }
 
+// Une date absente vaut mieux qu'une date fausse : tant que le NTP n'a pas
+// repondu, le champ ne figure pas et le backend horodate a la reception.
+size_t MqttClient::isoTimestamp(char *buffer, size_t len) const {
+  if (_clock == nullptr || !_clock->hasWallClock()) return 0;
+  const time_t now = (time_t)_clock->epoch();
+  if (now == 0) return 0;
+
+  struct tm utc;
+  gmtime_r(&now, &utc);
+  return strftime(buffer, len, "%Y-%m-%dT%H:%M:%SZ", &utc);
+}
+
 bool MqttClient::sendEvent(const Event &e) {
   if (!_mqtt.connected()) return false;
 
@@ -95,11 +108,15 @@ bool MqttClient::sendEvent(const Event &e) {
   char ack[40] = "";
   if (e.cmd_id[0] != '\0') snprintf(ack, sizeof(ack), ",\"cmd_id\":\"%s\"", e.cmd_id);
 
-  char body[288];
+  char stamp[40] = "";
+  char iso[24];
+  if (isoTimestamp(iso, sizeof(iso))) snprintf(stamp, sizeof(stamp), ",\"ts\":\"%s\"", iso);
+
+  char body[352];
   snprintf(body, sizeof(body),
-           "{\"event\":\"%s\",\"level\":\"%s\"%s%s%s,"
+           "{\"event\":\"%s\",\"level\":\"%s\"%s%s%s%s,"
            "\"origin\":\"%s\",\"seq\":%lu,\"uptime_s\":%lu}",
-           e.name, e.level, value, detail, ack, eventOriginName(e.origin),
+           e.name, e.level, value, detail, ack, stamp, eventOriginName(e.origin),
            (unsigned long)e.seq, (unsigned long)e.uptime_s);
 
   // QoS 1 : bloque jusqu'a l'accuse du broker, au plus ACK_TIMEOUT_MS.
@@ -148,6 +165,11 @@ void MqttClient::publish(const TelemetryFrame &f) {
 
   char body[BUFFER_SIZE];
   int n = snprintf(body, sizeof(body), "{\"uptime_s\":%lu", (unsigned long)f.uptime_s);
+
+  char iso[24];
+  if (isoTimestamp(iso, sizeof(iso))) {
+    n += snprintf(body + n, sizeof(body) - n, ",\"ts\":\"%s\"", iso);
+  }
 
   if (f.climate_valid) {
     n += snprintf(body + n, sizeof(body) - n,

@@ -13,7 +13,7 @@ public:
   uint32_t uptimeSeconds() const override;
 
   // Secondes depuis l'epoque Unix, 0 tant que la synchronisation n'a pas abouti.
-  uint32_t epoch() const;
+  uint32_t epoch() const override;
 
 private:
   const char *_server;
