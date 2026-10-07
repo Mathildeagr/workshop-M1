@@ -96,6 +96,26 @@ if ! docker compose exec -T -e PGPASSWORD="$PG_PASSWORD" database \
     docker compose restart backend predict-anomalie >/dev/null 2>&1
 fi
 
+# Attendre que l'API reponde avant de lancer la vision.
+#
+# Le service vision teste la liaison au backend une seule fois, au demarrage, et
+# garde le resultat. Lance deux secondes apres le conteneur, il tombe sur le 404
+# de Traefik — qui n'a pas encore de routeur pour un backend en cours de
+# demarrage — et affiche « backend injoignable » jusqu'au prochain redemarrage,
+# alors que tout fonctionne.
+printf "Attente de l'API"
+for _ in $(seq 1 45); do
+    if curl -s -o /dev/null --max-time 2 --cacert ./certs/sentinel.crt \
+       -w "%{http_code}" https://localhost/api/v1/health 2>/dev/null | grep -q 200; then
+        echo " : prête"
+        break
+    fi
+    printf "."
+    sleep 1
+done
+curl -s -o /dev/null --max-time 2 --cacert ./certs/sentinel.crt https://localhost/api/v1/health 2>/dev/null \
+    || echo " : toujours pas de réponse, la vision signalera le backend injoignable"
+
 # 6. Service vision (ai-vision/server.py) sur l'hôte
 #
 # Docker Desktop ne transmet pas la webcam aux conteneurs, le service tourne donc
