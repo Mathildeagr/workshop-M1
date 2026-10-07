@@ -137,21 +137,24 @@ class Service:
         porter des instructions destinees a d'autres briques."""
         event = body.get("event")
 
-        if event == "modify_sensitivity":
-            if not self.runtime.set_sensitivity(str(body.get("mode", ""))):
-                log.info("sensibilite refusee : %r", body.get("mode"))
+        if event == "configure":
+            # Un seul message pour les deux reglages, parce qu'un broker ne retient
+            # qu'un message par topic. Avec deux commandes retenues successives,
+            # seule la derniere survit, et la brique repartait avec une sensibilite
+            # par defaut apres chaque redemarrage sans que personne le voie.
+            days = body.get("window_days", body.get("days"))
+            sensitivity = self._apply_sensitivity(body.get("mode"))
+            window = self._apply_window(days)
+            if not (sensitivity or window):
                 return
-            for policy in self.policies.values():
-                policy.resync()
-            log.info("sensibilite reglee sur %s", self.runtime.sensitivity)
+
+        elif event == "modify_sensitivity":
+            if not self._apply_sensitivity(body.get("mode")):
+                return
 
         elif event == "modify_window":
-            days = body.get("window_days", body.get("days"))
-            if not self.runtime.set_window(days):
-                log.info("fenetre refusee : %r", days)
+            if not self._apply_window(body.get("window_days", body.get("days"))):
                 return
-            log.info("fenetre de reference reglee sur %g jours", self.runtime.window_days)
-            self._retrain.set()
 
         elif event == "retrain":
             self._retrain.set()
@@ -160,6 +163,28 @@ class Service:
             return
 
         await self.broker.publish_config(self.config())
+
+    def _apply_sensitivity(self, mode: object) -> bool:
+        if mode is None:
+            return False
+        if not self.runtime.set_sensitivity(str(mode)):
+            log.info("sensibilite refusee : %r", mode)
+            return False
+        # Les compteurs d'une bande ne veulent plus rien dire dans une autre.
+        for policy in self.policies.values():
+            policy.resync()
+        log.info("sensibilite reglee sur %s", self.runtime.sensitivity)
+        return True
+
+    def _apply_window(self, days: object) -> bool:
+        if days is None:
+            return False
+        if not self.runtime.set_window(days):
+            log.info("fenetre refusee : %r", days)
+            return False
+        log.info("fenetre de reference reglee sur %g jours", self.runtime.window_days)
+        self._retrain.set()
+        return True
 
     # -- boucles ------------------------------------------------------------
 

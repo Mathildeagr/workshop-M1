@@ -71,3 +71,45 @@ async def test_une_panne_de_capteur_annoncee_par_le_nœud_est_retenue(service):
 
     await service.on_node_event("esp01", {"event": "sensor_recovered", "detail": "dht22"})
     assert service.state()["sensor_faults"] == []
+
+
+async def test_une_consigne_combinee_regle_les_deux(service):
+    """Un broker ne retient qu'un message par topic.
+
+    Deux commandes retenues successives et seule la dernière survit : la brique
+    repartait avec la sensibilité par défaut après chaque redémarrage, sans que
+    personne le voie. Un seul message porte donc les deux réglages.
+    """
+    await service.on_command({"event": "configure", "mode": "low", "window_days": 90})
+
+    assert service.runtime.sensitivity == "low"
+    assert service.runtime.window_days == 90.0
+    assert service._retrain.is_set()                 # noqa: SLF001
+
+    config = service.config()
+    assert config["sensitivity"] == "low"
+    assert config["window_days"] == 90.0
+
+
+async def test_une_consigne_combinee_partielle_ne_touche_que_ce_qu_elle_porte(service):
+    await service.on_command({"event": "configure", "mode": "high"})
+
+    assert service.runtime.sensitivity == "high"
+    assert service.runtime.window_days == 7.0        # inchangée
+
+
+async def test_une_consigne_combinee_vide_ou_invalide_ne_change_rien(service):
+    await service.on_command({"event": "configure"})
+    await service.on_command({"event": "configure", "mode": "extreme", "window_days": -3})
+
+    assert service.runtime.sensitivity == "medium"
+    assert service.runtime.window_days == 7.0
+    assert not service._retrain.is_set()             # noqa: SLF001
+
+
+async def test_une_valeur_refusee_n_annule_pas_l_autre(service):
+    """Mode invalide mais fenêtre valide : on applique ce qui est applicable."""
+    await service.on_command({"event": "configure", "mode": "extreme", "window_days": 21})
+
+    assert service.runtime.sensitivity == "medium"
+    assert service.runtime.window_days == 21.0
