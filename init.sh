@@ -104,6 +104,10 @@ fi
 # On verifie que c'est bien NOTRE service qui repond, et pas n'importe quoi sur
 # le port : le recepteur AirPlay de macOS occupe le 5000 et repond 403 a tout,
 # ce qui faisait passer un port squatte pour un service en marche.
+#
+# A lancer depuis un vrai terminal : sur macOS l'autorisation camera appartient a
+# l'application qui demarre le processus, pas au script. Lance depuis un autre
+# programme, le service tourne mais ne peut pas ouvrir la camera.
 VISION_PORT=$(grep '^SENTINEL_SERVICE_PORT=' ai-vision/.env 2>/dev/null | cut -d= -f2)
 VISION_PORT="${VISION_PORT:-5001}"
 
