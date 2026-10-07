@@ -177,6 +177,42 @@ grep -q 'predictive/config' <<<"$retained" \
   && ok "configuration effective publiée en retenu" \
   || ko "topic config absent : le backend ne peut pas lire le réglage courant"
 
+title "Transport du nœud"
+
+# Ce que le firmware embarque, et ce qu'il fait reellement. Les deux peuvent
+# diverger : la configuration peut dire TLS alors qu'une ancienne version est
+# encore sur la carte, et le port en clair reste ouvert comme filet de secours.
+declared=$(sed -n 's/.*MQTT_TLS  *\([01]\).*/\1/p' firmware/esp01/src/config/secrets.h)
+port=$(sed -n 's/.*MQTT_PORT  *\([0-9]*\).*/\1/p' firmware/esp01/src/config/secrets.h)
+if [[ "$declared" == "1" ]]; then
+  ok "configuré en MQTTS sur le port $port"
+  [[ -f firmware/esp01/src/config/ca_cert.h ]] \
+    && ok "autorité de certification embarquée dans le firmware" \
+    || ko "ca_cert.h absent : le nœud ne pourra pas vérifier le serveur"
+else
+  note "configuré en clair sur le port $port (MQTT_TLS=0)"
+fi
+
+# Traefik termine le TLS puis relaie : une session qui en vient est chiffree,
+# une qui vient d'ailleurs est arrivee en clair sur le 1883.
+relay=$(docker inspect sentinel-traefik \
+        --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>/dev/null | awk '{print $1}')
+origin=$(docker compose logs --since 30m mosquitto 2>/dev/null \
+         | grep "as esp01" | tail -1 | sed -n 's/.*connected from \([0-9.]*\):.*/\1/p')
+if [[ -z "$origin" ]]; then
+  note "le nœud ne s'est pas connecté depuis trente minutes, transport réel inconnu"
+elif [[ "$origin" == "$relay" ]]; then
+  ok "le nœud arrive chiffré, par Traefik ($origin)"
+else
+  ko "le nœud arrive EN CLAIR depuis $origin, sans passer par Traefik ($relay)"
+  note "firmware obsolète sur la carte ? la reflasher : cd firmware/esp01 && pio run -t upload"
+fi
+
+if docker compose ps --format '{{.Service}} {{.Ports}}' 2>/dev/null | grep -q "1883->1883"; then
+  note "le port 1883 en clair reste publié : c'est le filet de secours,"
+  note "à retirer du compose avant le pentest une fois le TLS éprouvé."
+fi
+
 title "Base de données"
 if [[ "$(sql 'select 1')" == "1" ]]; then
   ok "authentification par le réseau"
