@@ -23,6 +23,7 @@
 #include "sensors/presence.h"
 #include "sensors/pir_sensor.h"
 #include "sensors/tamper.h"
+#include "sensors/adxl345_sensor.h"
 #include "sensors/contact_sensor.h"
 
 
@@ -33,7 +34,7 @@ static const uint8_t  SENSOR_FAIL_THRESHOLD = 3;
 static Dht22Sensor   dhtDevice(PIN_DHT);
 static Mq2Sensor     mq2Device(PIN_MQ2);
 static PirSensor     pirDevice(PIN_PIR);
-static ContactSensor tiltDevice(PIN_TILT, "SW-520D", PinBias::PullUp, -1, 50, 300, 800, 400);
+static Adxl345Sensor tiltDevice;
 static ContactSensor opticDevice(PIN_OPTIC, "FC-51", PinBias::None, 1, 30, 120, 800, 0);
 
 static WifiLink     link(WIFI_SSID, WIFI_PASSWORD,
@@ -200,6 +201,7 @@ static void announceClock() {
 }
 
 static void refreshScreen() {
+  frame.tilt_angle_deg = tiltDevice.tiltDegrees();
   wallClock.hms(screenData.hh, screenData.mm, screenData.ss);
   screenData.wall_clock   = wallClock.hasWallClock();
   screenData.wifi_up      = link.isConnected();
@@ -244,8 +246,8 @@ void setup() {
   if (!screen.begin()) {
     Serial.println(F("ecran OLED absent a l'adresse 0x3C"));
   }
-  if (!tilt.restLevel()) {
-    Serial.println(F("inclinaison fermee au repos : la carte ne redemarrera pas"));
+  if (!tiltDevice.present()) {
+    Serial.println(F("ADXL345 absent a l'adresse 0x53"));
   }
   Serial.println();
 

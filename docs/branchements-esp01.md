@@ -15,7 +15,7 @@ Pinout de référence : <https://mischianti.org/nodemcu-v3-high-resolution-pinou
 | Capteur température / humidité | DHT22 | climat | `D5` | 14 | `3V` |
 | Capteur de gaz et fumées | MQ-2 | qualité de l'air | `A0` | ADC0 | `3V` |
 | Détecteur de mouvement | HC-SR501 / APKLVSR | présence | `D6` | 12 | **`VU` (5V)** |
-| Capteur d'inclinaison à bille | SW-520D | module déplacé | `D3` | 0 | — |
+| Accéléromètre 3 axes | ADXL345 | module déplacé, choc | `D1` + `D2` (I²C, `0x53`) | 5 + 4 | `3V` |
 | Micro-switch à tige | — | couvercle ouvert | `D0` | 16 | — |
 | Capteur infrarouge de proximité | FC-51 | objectif masqué | `D0` | 16 | `3V` |
 | Écran OLED | SSD1306 0.96" I2C | affichage, adresse `0x3C` | `D1` + `D2` | 5 + 4 | `3V` |
@@ -23,7 +23,9 @@ Pinout de référence : <https://mischianti.org/nodemcu-v3-high-resolution-pinou
 | Buzzer passif | module 3 broches | alertes sonores | `D8` | 15 | `3V` |
 | Webcam USB | Full HD 1080p | vision IA | — | — | sur le **PC serveur** |
 
-Toutes les broches utilisables sont occupées. Il ne reste **aucune entrée analogique** et **aucune broche numérique libre**.
+**`D3` est libre** depuis que l'inclinaison passe par l'ADXL345 : il partage le bus I²C de l'écran et ne coûte aucune broche numérique. C'était la broche critique au démarrage, celle qui empêchait la carte de booter quand le contact était fermé.
+
+Il ne reste **aucune entrée analogique**.
 
 ### Rails d'alimentation
 
@@ -95,18 +97,50 @@ Les variantes sans cavalier ni potentiomètres sont figées en mode répétable 
 
 **60 s de stabilisation** après mise sous tension, pendant lesquelles il déclenche au hasard. Le firmware affiche ces détections en les marquant explicitement comme non fiables.
 
-### SW-520D — inclinaison → `D3`
+### ADXL345 — déplacement et choc → I²C
+
+Le module a huit broches ; **trois ne se branchent pas**.
 
 ```
-patte 1  →  G
-patte 2  →  D3
+VCC   →  3V          (le GY-291 tolère 5 V, mais rien n'oblige à le risquer)
+GND   →  G
+SCL   →  D1          partagé avec l'écran
+SDA   →  D2          partagé avec l'écran
+CS    →  3V          ← indispensable : à l'état bas, le module parle SPI
+SDO   →  G           adresse 0x53 (au niveau haut ce serait 0x1D)
+INT1  →  non connecté
+INT2  →  non connecté
 ```
 
-Non polarisé, aucune résistance externe (tirage interne vers le haut sur GPIO0).
+**`CS` est le piège.** Laissée flottante ou à l'état bas, la puce bascule en SPI
+et reste muette sur l'I²C — le firmware affichera `ADXL345 absent a l'adresse
+0x53` sans autre explication. La plupart des modules GY-291 ont un tirage haut,
+mais le relier explicitement à `3V` coûte un fil et supprime la question.
 
-⚠️ **`D3` est GPIO0, critique au démarrage.** Monte le capteur de sorte que le contact soit **ouvert boîtier posé**. S'il est fermé au repos, `D3` est maintenue basse et la carte part en mode téléversement au lieu de démarrer. Le firmware détecte et signale ce cas au boot.
+Deux appareils cohabitent sans conflit sur le bus : l'écran répond en `0x3C`,
+l'accéléromètre en `0x53`.
 
-Le capteur rebondit énormément et la moindre vibration le fait papilloter : le firmware distingue la **secousse** (`tamper_suspected`) du **déplacement maintenu 300 ms** (`tamper_removed`).
+#### Ce qu'il détecte, et comment
+
+Le contact à bille ne savait dire que « fermé » ou « ouvert ». L'accéléromètre
+mesure **où pointe la pesanteur** et **à quel point le boîtier est secoué** —
+deux grandeurs indépendantes, qui alimentent les deux niveaux déjà définis :
+
+| Mesure | Niveau | Événement |
+|---|---|---|
+| écart instantané à la pesanteur au repos > **0,35 g** | `Disturbed` | `tamper_suspected` |
+| angle avec la position apprise > **12°**, tenu 300 ms | `Triggered` | `tamper_removed` |
+
+Un choc passe et revient ; une inclinaison maintenue ne revient pas. C'est
+exactement la distinction que le contact à bille ne savait pas faire, et qui
+obligeait à bricoler des temporisations pour deviner laquelle des deux on avait.
+
+L'angle se calcule sur une pesanteur **filtrée**, pour qu'un coup sur la table
+ne se lise pas comme un déplacement. Le choc, lui, se lit sur la mesure brute.
+
+La position de repos est apprise au démarrage, sur 32 mesures : **le boîtier
+doit être posé à sa place quand la carte démarre.** Après un déplacement
+légitime, `relearnRest()` reprend la référence.
 
 ### Micro-switch à tige + IR de proximité → `D0`
 
@@ -179,11 +213,11 @@ L'ESP8266 lit trois broches au boot pour choisir son mode.
 
 | Broche | GPIO | État imposé | Occupée par | Pourquoi c'est sûr |
 |---|---|---|---|---|
-| `D3` | 0 | **HAUT** | SW-520D | contact ouvert boîtier posé → tirage haut |
+| `D3` | 0 | **HAUT** | *libre* | plus rien n'y est câblé depuis l'ADXL345 |
 | `D4` | 2 | **HAUT** | LED verte | sortie, maintenue haute par le tirage de la carte |
 | `D8` | 15 | **BAS** | buzzer | tirage externe bas → silencieux au boot |
 
-Le seul risque résiduel : un SW-520D monté à l'envers. Le firmware l'affiche au démarrage.
+Plus aucun risque résiduel : la seule broche qui en portait un, `D3`, n'est plus utilisée.
 
 ---
 
@@ -195,7 +229,7 @@ Le seul risque résiduel : un SW-520D monté à l'envers. Le firmware l'affiche 
 - **Production** : bloc 220 V→7,5 V sur `VIN` + `G`, **USB débranché**.
 - L'ESP8266 ne tolère que **3,3 V** sur ses broches de signal.
 
-Budget courant, alimentation USB : ESP8266 ~170 mA, MQ-2 ~150 mA, OLED ~20 mA, PIR + IR + LED ~30 mA → **~370 mA**, dans les 500 mA d'un port USB.
+Budget courant, alimentation USB : ESP8266 ~170 mA, MQ-2 ~150 mA, OLED ~20 mA, PIR + IR + LED ~30 mA, ADXL345 ~0,1 mA → **~370 mA**. À brancher sur un port direct de la machine, pas sur un hub : un hub applique le courant que le périphérique a *déclaré*, et le CH340 en déclare 104 mA.
 
 ---
 

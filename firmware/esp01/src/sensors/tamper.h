@@ -25,10 +25,10 @@ public:
   virtual const char *name() const             = 0;
 
   virtual TamperLevel level() const              = 0;
-  virtual bool        contactClosed() const      = 0;
   virtual uint32_t    msSinceLastTrigger() const = 0;
   virtual uint16_t    episodesInWindow() const   = 0;
-  virtual bool        restLevel() const          = 0;
+
+  // Reapprend la position ou l'etat de repos, apres un deplacement legitime.
   virtual void        relearnRest()              = 0;
 };
 

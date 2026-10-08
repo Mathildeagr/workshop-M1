@@ -7,7 +7,8 @@
 #define PIN_DHT       D5
 #define PIN_PIR       D6
 #define PIN_MQ2       A0
-#define PIN_TILT      D3   // GPIO0 : contact OUVERT au repos, sinon pas de boot
+// D3 (GPIO0) est libre depuis que l'inclinaison passe par l'ADXL345, en I2C sur
+// le bus de l'ecran. C'etait la broche critique au demarrage : plus de risque.
 #define PIN_OPTIC     D0   // GPIO16 : tirage externe 10k vers 3V
 #define PIN_LED_RED   D7
 #define PIN_LED_GREEN D4
