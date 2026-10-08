@@ -246,9 +246,31 @@ ou une intervention de maintenance.
 Une coupure du signal sonore interrompt immédiatement l'alarme en cours ; une
 coupure du signal lumineux ramène la LED à son état de repos.
 
-Les réglages ne survivent pas à un redémarrage : au boot, tout est actif.
+Les réglages ne survivent pas à un redémarrage : au boot, tout est actif. Le
+backend les rejoue après un `node_boot`, ce qui suppose que l'accusé ci-dessous
+lui revienne.
 
-### 7.3 Régler la sensibilité
+### 7.3 Accusé d'exécution
+
+Toute commande exécutée revient sur le topic `events` avec `origin: "command"`
+et le `cmd_id` reçu. C'est le **seul** signe que l'ordre a porté : le nœud ne
+répond pas autrement, et sans cet écho le backend rejoue la commande puis
+l'abandonne alors qu'elle a bien été exécutée.
+
+```json
+{ "event": "deactivate", "level": "info", "cmd_id": "cmd-72291f1a",
+  "origin": "command", "seq": 42, "uptime_s": 123 }
+```
+
+Les commandes de §7.1 renvoient leur nom d'événement et leur gravité, celles de
+§7.2 leur nom avec `level: "info"`. Une commande dont la cible ou le signal est
+inconnu n'est pas acquittée : elle n'a rien fait, et l'abandon annoncé est exact.
+
+`origin: "command"` distingue un ordre rejoué d'un fait constaté. Sans ce
+marqueur, l'écho reviendrait au nœud à l'identique et rien n'arrêterait la
+boucle.
+
+### 7.4 Régler la sensibilité
 
 ```json
 { "event": "modify_sensitivity", "target": "environnement", "mode": "high" }

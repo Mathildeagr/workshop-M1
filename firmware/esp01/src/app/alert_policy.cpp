@@ -77,6 +77,11 @@ void AlertPolicy::raise(Family f, State s, const char *detail, float value,
   _sink.publishEvent(e);
 }
 
+void AlertPolicy::acknowledge(const char *event, const char *cmdId) {
+  const EventRecord e = { event, "info", nullptr, NAN, EventOrigin::Command, cmdId };
+  _sink.publishEvent(e);
+}
+
 // Une presence detectee par le PIR seul ne prouve rien : elle signale une
 // activite autour du boitier, pas une intrusion. Elle ne sort donc jamais de
 // "a verifier". Rien n'est remonte tant que le capteur n'est pas stabilise.
