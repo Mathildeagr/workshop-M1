@@ -12,7 +12,8 @@ Mq2Sensor::Mq2Sensor(uint8_t pin, uint32_t warmupMs, uint32_t intervalMs)
     _calibrated(false),
     _baseline(NAN),
     _baselineSum(0),
-    _baselineCount(0) {}
+    _baselineCount(0),
+    _saturatedStreak(0) {}
 
 void Mq2Sensor::begin() {
   _startedAt   = millis();
@@ -80,6 +81,11 @@ ReadStatus Mq2Sensor::read(GasReading &out) {
 
   const bool warm      = (now - _startedAt) >= _warmupMs;
   const bool saturated = (raw >= RAW_MAX - 3);
+
+  // La butee est normale pendant la chauffe ; passe ce delai elle signale une
+  // entree hors plage, typiquement une sortie 5 V branchee sans diviseur.
+  if (warm && saturated) { if (_saturatedStreak < 255) _saturatedStreak++; }
+  else                   { _saturatedStreak = 0; }
 
   // La ligne de base suppose un air sain, et une mesure en butee ne vaut rien.
   if (warm && !_calibrated && !saturated) {

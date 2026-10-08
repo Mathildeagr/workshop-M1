@@ -16,6 +16,10 @@ public:
   uint32_t warmupRemainingMs() const override;
   bool     isCalibrated() const override { return _calibrated; }
   float    baseline() const override { return _baseline; }
+  // Butee prolongee : la valeur est reelle, mais tant qu'elle dure la ligne de
+  // base ne se releve pas et le ratio reste NAN. C'est une panne, pas une mesure.
+  uint8_t  saturatedStreak() const { return _saturatedStreak; }
+
   uint8_t  failStreak() const override { return _failStreak; }
 
 private:
@@ -33,6 +37,7 @@ private:
   float    _baseline;
   uint32_t _baselineSum;
   uint16_t _baselineCount;
+  uint8_t  _saturatedStreak;
 
   // Echantillons espaces dans le temps, puis mediane. Un nombre impair pour que
   // la mediane soit une valeur relevee et non une moyenne de deux.

@@ -29,6 +29,9 @@
 
 static const uint32_t TELEMETRY_PERIOD_MS   = 2000;
 static const uint8_t  SENSOR_FAIL_THRESHOLD = 3;
+// Butee du MQ-2 : ~5 min a 2 s par lecture. Plus long que toute exposition au
+// briquet, qui sature legitimement le temps de la demonstration.
+static const uint8_t  GAS_STUCK_THRESHOLD   = 150;
 
 // Point de montage : seul endroit qui connait les classes concretes.
 static Dht22Sensor   dhtDevice(PIN_DHT);
@@ -104,16 +107,27 @@ static void readClimate() {
 static void readGas() {
   GasReading r;
   switch (gas.read(r)) {
-    case ReadStatus::Ok:
+    case ReadStatus::Ok: {
       frame.gas_valid     = true;
       frame.gas_raw       = r.raw;
       frame.gas_ratio     = r.ratio;
       frame.gas_warming   = r.warming_up;
       frame.gas_saturated = r.saturated;
       lastGasAt           = r.timestamp_ms;
-      if (gasFaultReported) policy.report("sensor_recovered", "info", "mq2");
-      gasFaultReported    = false;
+      // Une butee qui dure n'est pas une mesure : la ligne de base ne se releve
+      // plus, le ratio reste NAN, et la brique attend indefiniment des minutes
+      // exploitables qui ne viendront jamais. Autant que le noeud le dise.
+      const bool stuck = gas.saturatedStreak() >= GAS_STUCK_THRESHOLD;
+      if (stuck && !gasFaultReported) {
+        jinglePlay(JIN_ERROR);
+        policy.report("sensor_fault", "warning", "mq2 en butee");
+        gasFaultReported = true;
+      } else if (!stuck && gasFaultReported) {
+        policy.report("sensor_recovered", "info", "mq2");
+        gasFaultReported = false;
+      }
       break;
+    }
     case ReadStatus::Error:
       if (gas.failStreak() >= SENSOR_FAIL_THRESHOLD) {
         frame.gas_valid = false;

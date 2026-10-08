@@ -25,4 +25,6 @@ public:
   virtual bool     isCalibrated() const      = 0;
   virtual float    baseline() const          = 0;
   virtual uint8_t  failStreak() const        = 0;
+  // Nombre de lectures consecutives en butee une fois le capteur chaud.
+  virtual uint8_t  saturatedStreak() const   = 0;
 };
