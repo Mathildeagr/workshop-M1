@@ -21,8 +21,10 @@ import argparse
 import hmac
 import os
 import re
+import textwrap
 import threading
 import time
+import unicodedata
 from contextlib import contextmanager
 
 import cv2
@@ -53,6 +55,111 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 
 
 # --- Boucle de vision en arrière-plan ---------------------------------------------------------
+def notice(text):
+    """Image de remplacement quand la caméra se tait.
+
+    Un flux qui se fige sans un mot laisse croire que tout va bien ; mieux vaut
+    afficher la panne. Les polices Hershey d'OpenCV ne couvrant que l'ASCII, les
+    accents sont retirés ici, et nulle part ailleurs.
+    """
+    plain = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    frame = np.zeros((config.FRAME_HEIGHT, config.FRAME_WIDTH, 3), dtype=np.uint8)
+
+    def centre(line, y, scale, colour, weight):
+        (w, _), _ = cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, scale, weight)
+        cv2.putText(frame, line, ((config.FRAME_WIDTH - w) // 2, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, scale, colour, weight, cv2.LINE_AA)
+
+    lines = textwrap.wrap(plain, 46)[:3]
+    top = config.FRAME_HEIGHT // 2 - 14 * len(lines)
+    centre("CAMERA", top, 1.0, (60, 60, 230), 2)
+    for i, line in enumerate(lines):
+        centre(line, top + 40 + i * 28, 0.6, (220, 220, 220), 1)
+    return frame
+
+
+class CameraFeed:
+    """Lecture de la caméra dans un thread à part.
+
+    Deux pannes échappent à un cap.read() posé dans la boucle de vision : la
+    lecture peut bloquer sans fin quand le périphérique disparaît (AVFoundation
+    ne rend alors ni image ni erreur, et la boucle ne tourne plus du tout), et
+    elle peut rendre indéfiniment le même tampon. Isoler la lecture traite les
+    deux : le thread bloque seul, et un tampon répété n'avance pas le compteur,
+    donc la boucle constate dans les deux cas l'absence d'image fraîche.
+
+    Un capteur réel bruite toujours ses bits de poids faible : deux images
+    rigoureusement identiques signalent un flux arrêté, jamais une scène immobile.
+    """
+
+    def __init__(self, source):
+        self._source = source
+        self._lock = threading.Lock()
+        self._frame = None
+        self._seq = 0        # n'avance que sur une image réellement nouvelle
+        self._served = 0
+        self._generation = 0
+        self._pump = None
+        self.open()
+
+    def open(self):
+        """Ouvre une capture et abandonne le lecteur précédent. Lève si la caméra refuse."""
+        cap = vision.open_camera(self._source)   # avant d'abandonner : en cas d'échec, l'ancien lecteur sert encore
+        with self._lock:
+            self._generation += 1
+            generation = self._generation
+            self._pump = threading.Thread(target=self._read_loop, args=(generation, cap), daemon=True)
+            self._pump.start()
+
+    def close(self, timeout=1.0):
+        """Abandonne le lecteur et attend qu'il libère le périphérique.
+
+        Un enrôlement rouvre la caméra juste après : sans cette attente les deux
+        captures se chevauchent et macOS refuse la seconde. Une lecture bloquée,
+        elle, ne rendra jamais la main — on ne l'attend donc pas indéfiniment.
+        """
+        with self._lock:
+            self._generation += 1
+            pump = self._pump
+        if pump is not None:
+            pump.join(timeout=timeout)
+
+    def read(self, timeout):
+        """Dernière image non encore servie, ou None si aucune n'arrive dans le délai."""
+        deadline = time.time() + timeout
+        while True:
+            with self._lock:
+                if self._seq != self._served:
+                    self._served = self._seq
+                    return self._frame
+            if time.time() >= deadline:
+                return None
+            time.sleep(0.01)
+
+    def _read_loop(self, generation, cap):
+        previous = None
+        try:
+            while True:
+                try:
+                    ok, frame = cap.read()
+                except Exception:
+                    ok, frame = False, None
+                # Un sous-échantillon suffit à reconnaître un tampon répété, pour 14 Ko comparés.
+                signature = frame[::8, ::8].tobytes() if ok else None
+                fresh, previous = ok and signature != previous, signature
+                with self._lock:
+                    if generation != self._generation:
+                        return      # lecteur abandonné : une autre capture a pris la suite
+                    if fresh:
+                        self._frame, self._seq = frame, self._seq + 1
+                if not fresh:
+                    time.sleep(0.05)    # lecture en échec : ne pas tourner à vide
+        finally:
+            # Un lecteur resté bloqué ne passe jamais ici et garde le périphérique :
+            # la réouverture échoue alors franchement, et sera retentée.
+            cap.release()
+
+
 class VisionRunner:
     """Même traitement que vision.py, mais dans un thread contrôlé par HTTP."""
 
@@ -141,40 +248,37 @@ class VisionRunner:
                 detector = PersonDetector()
             sender = BackendAlertSender(enabled=self.send_alerts, stats=DELIVERY)
             sender.start()
-            cap = vision.open_camera(source)
+            feed = CameraFeed(source)
         except Exception as e:  # modèle manquant, caméra introuvable...
             self.error = str(e)
             print(f"[vision] démarrage impossible : {e}")
             return
 
         policy, last_reload = vision.AlertPolicy(), time.time()
-        last_ok, next_reopen = time.time(), 0.0
+        next_reopen = 0.0
         print("[vision] démarrée")
         try:
             while not self._stop.is_set():
-                ok, frame = cap.read()
-                if not ok:
-                    # Une caméra qui cesse de rendre des images ne lève aucune
-                    # erreur : la boucle continue de tourner, le flux reste
-                    # ouvert, et l'image se fige sans que rien ne le dise. On le
-                    # signale, puis on tente de rouvrir.
+                frame = feed.read(STALE_FRAME_S)
+                if frame is None:
+                    # Caméra débranchée, lecture bloquée ou tampon répété : aucun
+                    # des trois ne lève d'erreur, et l'image se figerait sans que
+                    # rien ne le dise. On l'écrit sur le flux, puis on rouvre.
                     now = time.time()
-                    if now - last_ok > STALE_FRAME_S:
-                        if not self.error:
-                            self.error = "la caméra ne renvoie plus d'image"
+                    if not self.error:
+                        self.error = "la caméra ne renvoie plus d'image"
+                        print(f"[vision] {self.error}")
+                    if now >= next_reopen:
+                        next_reopen = now + REOPEN_EVERY_S
+                        try:
+                            feed.open()
+                            print("[vision] caméra rouverte")
+                        except Exception as e:
+                            self.error = f"caméra injoignable : {e}"
                             print(f"[vision] {self.error}")
-                        if now >= next_reopen:
-                            next_reopen = now + REOPEN_EVERY_S
-                            try:
-                                cap.release()
-                                cap = vision.open_camera(source)
-                                print("[vision] caméra rouverte")
-                            except Exception as e:
-                                self.error = f"caméra injoignable : {e}"
-                    time.sleep(0.05)
+                    self.publish(notice(self.error))
                     continue
 
-                last_ok = time.time()
                 if self.error:
                     self.error = None
                     print("[vision] caméra de nouveau en service")
@@ -201,7 +305,7 @@ class VisionRunner:
                     "at": time.time(),
                 }
         finally:
-            cap.release()
+            feed.close()
             print("[vision] arrêtée")
 
 
