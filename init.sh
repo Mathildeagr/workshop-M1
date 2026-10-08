@@ -84,8 +84,12 @@ else
 fi
 
 # Mosquitto ne relit son fichier de comptes qu'au démarrage, et un conteneur déjà
-# en place garde les anciens.
-docker compose restart mosquitto >/dev/null 2>&1
+# en place garde les anciens. Traefik a le même défaut avec ses certificats : il
+# surveille le répertoire de configuration dynamique, pas les fichiers que
+# celle-ci référence. Un certificat régénéré ne lui parvient donc jamais, et il
+# continue de présenter l'ancien — ce qui fait échouer toute vérification, sans
+# qu'aucun journal ne le dise.
+docker compose restart mosquitto traefik >/dev/null 2>&1
 
 # PostgreSQL n'applique son mot de passe qu'à l'initialisation d'un volume
 # vierge : une base déjà créée garde l'ancien, et plus rien ne s'y connecte. On
