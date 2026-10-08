@@ -13,7 +13,7 @@ Pinout de référence : <https://mischianti.org/nodemcu-v3-high-resolution-pinou
 | Composant (nom commun) | Référence | Rôle | Broche | GPIO | Alim. |
 |---|---|---|---|---|---|
 | Capteur température / humidité | DHT22 | climat | `D5` | 14 | `3V` |
-| Capteur de gaz et fumées | MQ-2 | qualité de l'air | `A0` **via diviseur** | ADC0 | **`VU` (5V)** |
+| Capteur de gaz et fumées | MQ-2 | qualité de l'air | `A0` **via 180 kΩ** | ADC0 | **`VU` (5V)** |
 | Détecteur de mouvement | HC-SR501 / APKLVSR | présence | `D6` | 12 | **`VU` (5V)** |
 | Accéléromètre 3 axes | ADXL345 | module déplacé, choc | `D1` + `D2` (I²C, `0x53`) | 5 + 4 | `3V` |
 | Micro-switch à tige | — | couvercle ouvert | `D0` | 16 | — |
@@ -65,19 +65,26 @@ Cadence maximale : **une lecture toutes les 2,5 s**. La datasheet annonce 2 s, m
 
 ```
 VCC  →  VU                     (5 V : le datasheet exige 5,0 V ± 0,1 V)
-GND  →  G
-AO   →  10 kΩ  →  A0
-                  └── 10 kΩ  →  G
+GND  →  G                      (indispensable : voir plus bas)
+AO   →  180 kΩ  →  A0
 DO   →  non connecté
 ```
 
 **`AO` et jamais `DO`.** Le sujet interdit les seuils statiques pour le modèle prédictif, or `DO` *est* un seuil réglé au potentiomètre. Corollaire : **le potentiomètre du module n'agit que sur `DO`** et ne changera rien aux relevés.
 
-**Le diviseur n'est pas optionnel.** L'élément sensible chauffe à 5 V, donc `AO` monte jusqu'à 5 V, alors que `A0` n'accepte que 3,2 V. Branché en direct, `A0` reste collé à 1024 : la ligne de base ne se relève jamais, `gas_ratio` reste NAN, et la brique prédictive n'a plus une seule minute exploitable — sans que rien ne le dise avant la version qui signale `sensor_fault / mq2 en butee`.
+**Les 180 kΩ ne sont pas un choix libre.** `A0` n'est pas une entrée nue : la carte y pose déjà un pont 220 kΩ / 100 kΩ vers la masse, et son convertisseur sature à 1,0 V. Une résistance série forme donc un diviseur avec ces 320 kΩ :
 
-Deux résistances **identiques de 10 kΩ** ramènent le maximum à 2,5 V. On perd la moitié de l'échelle sans rien perdre d'utile : `gas_ratio` est un rapport à la ligne de base, la normalisation absorbe le facteur. 10 kΩ / 20 kΩ donnerait 3,33 V, encore au-dessus de la limite.
+```
+V_adc = V_AO × 100k / (R + 320k)        pleine échelle à V_adc = 1,0 V
+R = 180k  →  pleine échelle à (180 + 320) / 100 = 5,0 V exactement
+R = 0     →  pleine échelle à 3,2 V, d'où la butée bien connue
+```
 
-Alimenter en `3V` évite le diviseur mais sous-chauffe l'élément : les relevés tombent à quelques unités sur 1023 et ne veulent plus rien dire.
+180 kΩ fait donc correspondre 0–5 V à 0–1024 sans rien perdre de l'échelle. Une valeur plus faible sature avant 5 V, une valeur plus forte gâche de la résolution.
+
+**La masse du module compte autant que l'alimentation.** Sur le MQ-2, `AO` se lit entre l'élément sensible et la résistance de charge, laquelle rejoint la masse. Masse ouverte, aucun courant ne la traverse et `AO` se colle à Vcc : `A0` lit 1024 **sans le moindre bruit**, écart-type nul. C'est la signature à reconnaître — un ADC qui mesure vraiment tremble toujours d'un point ou deux, surtout derrière 180 kΩ. Une masse ouverte ne ressemble donc pas à une panne, elle ressemble à une valeur maximale parfaitement stable.
+
+Alimenter en `3V` évite d'avoir à réfléchir à l'échelle mais sous-chauffe l'élément : les relevés tombent à quelques unités sur 1023 et ne veulent plus rien dire.
 
 Préchauffage : **20 min** avant valeurs stables, **24 h de rodage** à la première utilisation. Le capteur tiédit, c'est normal. Une saturation à 1024 pendant la chauffe est normale : la valeur monte fort puis redescend. Passé le préchauffage, une butée qui dure plus de cinq minutes est une panne, et le nœud émet alors `sensor_fault` avec le détail `mq2 en butee`.
 
