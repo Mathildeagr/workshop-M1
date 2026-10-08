@@ -72,7 +72,16 @@ chmod 644 ./mosquitto/config/passwd 2>/dev/null
 
 # 5. Démarrage de l'infrastructure
 echo "Lancement des conteneurs..."
-docker compose up -d --build
+# Hors ligne, Docker ne peut pas résoudre les images de base et la construction
+# échoue avant même de commencer. Le réseau de table n'ayant pas d'accès sortant,
+# c'est le cas courant : on démarre alors sur les images déjà construites.
+if curl -s --max-time 4 -o /dev/null https://registry-1.docker.io/v2/ 2>/dev/null; then
+    docker compose up -d --build
+else
+    echo "   Pas d'accès au registre : démarrage sur les images déjà construites."
+    echo "   Reconstruire pendant qu'il y a du réseau : docker compose build"
+    docker compose up -d
+fi
 
 # Mosquitto ne relit son fichier de comptes qu'au démarrage, et un conteneur déjà
 # en place garde les anciens.

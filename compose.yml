@@ -49,7 +49,12 @@ services:
     ports:
       - "123:123/udp"
     environment:
-      - NTP_SERVERS=time.cloudflare.com   # amont, si la machine a un accès sortant TODO: CHanger si pas internet voir possibilité avec routeur.
+      # L'amont sert quand la machine a un accès sortant. L'adresse en 127 fait
+      # ajouter « local stratum 10 » par le script de l'image : sans elle, chrony
+      # se déclare non synchronisé hors ligne et REFUSE de servir l'heure — or le
+      # nœud exige une horloge juste avant toute poignée de main TLS. Le réseau de
+      # table étant étanche, c'est le cas nominal, pas le cas dégradé.
+      - NTP_SERVERS=time.cloudflare.com,127.127.1.0
       - LOG_LEVEL=0
     networks:
       - edge
