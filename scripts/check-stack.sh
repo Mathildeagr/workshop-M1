@@ -277,6 +277,16 @@ else
   # tomber la seconde bien au-dessous de la premiere, et n'afficher que la
   # premiere laisse croire que le compte y est.
   ko "pas encore de modèle : $(jget error <<<"$model"), ${available:-?} minutes en base"
+  # Une seule colonne vide suffit a disqualifier la minute entiere. Un capteur
+  # muet ou sature bloque donc l'apprentissage sans jamais le dire, et attendre
+  # plus longtemps n'y change rien : il faut savoir lequel.
+  blocking=$(sql "select col || ' manquant sur ' || n || ' des ' || t || ' minutes'
+      from (select c.col,
+                   (select count(*) from sensor_minutes where (to_jsonb(sensor_minutes) ->> c.col) is null) as n,
+                   (select count(*) from sensor_minutes) as t
+            from (values ('temperature'),('humidity'),('dew_point'),('gas_ratio')) as c(col)) s
+      where n > 0 order by n desc limit 1;")
+  [[ -n "$blocking" ]] && note "variable bloquante : $blocking"
   note "dernière tentative : $(jget attempted_at <<<"$model"), nouvelle dans 2 min"
   note "pour ne pas attendre deux heures de mesures : ./scripts/check-stack.sh --seed 30"
 fi
