@@ -23,8 +23,8 @@ vitesse seule n'aggrave donc jamais.
 
 Une forêt d'isolement, entraînée sur la fenêtre de référence demandée, répond à
 une question : ce point est-il rare. Son score est converti en p-valeur par les
-quantiles des scores d'apprentissage, ce qui rend le taux d'alerte prévisible —
-en `medium`, la brique parle une fois sur vingt.
+quantiles des scores d'apprentissage : le seuil s'exprime alors en rareté
+relevée, et non en unité de capteur à deviner.
 
 Mais une p-valeur est un rang, et un rang sature : au-delà de la plage apprise,
 45 °C et 23 °C rendent la même valeur. Deux grandeurs non bornées s'en chargent,
@@ -85,11 +85,16 @@ brique réapprend à chaque reconnexion.
 consigne et publie la fenêtre effective — celle que l'historique permet
 réellement de couvrir. Au backend de l'afficher correctement.
 
-| `mode` | p-valeur | ampleur | vitesse | taux d'alerte attendu |
+| `mode` | p-valeur | ampleur | vitesse | ce que l'opérateur obtient |
 |---|---|---|---|---|
-| `low` | 0.990 | ×3.0 | ×8.0 | 1 mesure sur 100 |
-| `medium` | 0.950 | ×2.0 | ×5.0 | 1 sur 20 |
-| `high` | 0.900 | ×1.2 | ×3.0 | 1 sur 10 |
+| `low` | 0.990 | ×3.0 | ×8.0 | ne signale que les écarts francs |
+| `medium` | 0.950 | ×2.0 | ×5.0 | réglage par défaut |
+| `high` | 0.900 | ×1.2 | ×3.0 | réagit aux écarts légers |
+
+Aucun taux d'alerte global ne se déduit de ces seuils : seule la dérive est un
+quantile, l'ampleur et la vitesse sont des rapports non bornés. Annoncer « une
+mesure sur vingt » ne vaudrait que pour la dérive seule, sur des données
+semblables à l'apprentissage.
 
 Les consignes sont publiées en retenu : au redémarrage la brique retrouve le
 dernier réglage de l'opérateur, sans état à stocker.

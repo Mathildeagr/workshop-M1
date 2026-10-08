@@ -29,10 +29,10 @@ public:
   const char *name() const override { return _name; }
 
   TamperLevel level() const override { return _level; }
-  bool        contactClosed() const override { return _raw; }
+  bool        contactClosed() const { return _raw; }
   uint32_t    msSinceLastTrigger() const override;
   uint16_t    episodesInWindow() const override;
-  bool        restLevel() const override { return _restLevel; }
+  bool        restLevel() const { return _restLevel; }
   void        relearnRest() override;
 
 private:

@@ -27,6 +27,9 @@ struct TelemetryFrame {
   uint16_t presence_count;
 
   TamperLevel tilt;
+  // Inclinaison mesuree, en degres par rapport a la position apprise au repos.
+  // Affichee au moniteur pour pouvoir regler les seuils plutot que les deviner.
+  float       tilt_angle_deg;
   TamperLevel optic;
 
   bool     wifi_up;

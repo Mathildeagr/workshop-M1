@@ -28,15 +28,6 @@ services:
     image: eclipse-mosquitto:2
     container_name: sentinel-mosquitto
     restart: unless-stopped
-    ports:
-      # MQTT en clair pour les nœuds IoT. Traefik n'expose que le 8883 en TLS, et
-      # l'ESP8266 ne parle pas encore MQTTS : sans ce port, il ne peut pas joindre
-      # le broker. Le sous-réseau de table est étanche et le broker refuse les
-      # connexions anonymes, mais ça reste du trafic en clair : à retirer dès que
-      # le nœud passe en MQTTS.
-      # MQTT_BIND_IP dans le .env permet de restreindre l'écoute à la seule
-      # adresse du réseau de table plutôt qu'à toutes les interfaces.
-      - "${MQTT_BIND_IP:-0.0.0.0}:1883:1883"
     volumes:
       - ./mosquitto/config:/mosquitto/config:ro
       - mosquitto-data:/mosquitto/data
@@ -58,7 +49,12 @@ services:
     ports:
       - "123:123/udp"
     environment:
-      - NTP_SERVERS=time.cloudflare.com   # amont, si la machine a un accès sortant TODO: CHanger si pas internet voir possibilité avec routeur.
+      # L'amont sert quand la machine a un accès sortant. L'adresse en 127 fait
+      # ajouter « local stratum 10 » par le script de l'image : sans elle, chrony
+      # se déclare non synchronisé hors ligne et REFUSE de servir l'heure — or le
+      # nœud exige une horloge juste avant toute poignée de main TLS. Le réseau de
+      # table étant étanche, c'est le cas nominal, pas le cas dégradé.
+      - NTP_SERVERS=time.cloudflare.com,127.127.1.0
       - LOG_LEVEL=0
     networks:
       - edge

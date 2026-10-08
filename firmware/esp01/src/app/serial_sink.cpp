@@ -48,6 +48,9 @@ void SerialSink::publish(const TelemetryFrame &f) {
 
   Serial.print(F("  |  inclinaison "));
   Serial.print(tamperLevelName(f.tilt));
+  Serial.print(F(" "));
+  Serial.print(f.tilt_angle_deg, 1);
+  Serial.print(F("\xc2\xb0"));
   Serial.print(F("  |  objectif "));
   Serial.print(tamperLevelName(f.optic));
 

@@ -11,6 +11,10 @@ struct ScreenData {
   const char *network_text;   // adresse IP, ou l'etat de la connexion
   uint8_t     hh, mm, ss;
   bool     wall_clock;
+
+  // Evenement d'alarme en cours, nullptr s'il n'y en a pas. L'ecran ne sait pas
+  // ce qu'il represente : il recoit un nom et cherche quoi afficher.
+  const char *alert_event;
 };
 
 class StatusScreen {
@@ -27,12 +31,17 @@ public:
   void update(const ScreenData &d);
 
 private:
-  enum Page : uint8_t { PAGE_CLIMATE = 0, PAGE_SYSTEM = 1, PAGE_COUNT = 2 };
+  enum Page : uint8_t { PAGE_CLIMATE = 0, PAGE_SYSTEM = 1, PAGE_IDENTITY = 2, PAGE_COUNT = 3 };
 
   void drawPage(uint8_t page, int16_t x, const ScreenData &d);
   void drawClimate(int16_t x, const ScreenData &d);
   void drawSystem(int16_t x, const ScreenData &d);
-  void drawHeader(int16_t x, const char *title);
+  void drawIdentity(int16_t x);
+  void drawAlert(const char *event);
+
+  // Une image de l'animation du logo, a l'avancement donne. Partagee par
+  // l'ouverture bloquante et le rejeu periodique.
+  void drawXFrame(float p);
   void drawThermometer(int16_t x, int16_t y);
   void drawDroplet(int16_t x, int16_t y);
   void drawGauge(int16_t x, int16_t y, int16_t w, int16_t h, float pct);
@@ -50,4 +59,10 @@ private:
   uint32_t _slideStart;
   uint32_t _lastSwitch;
   uint32_t _lastDraw;
+
+  uint32_t _logoStart;   // 0 : pas d'animation en cours
+  uint32_t _nextLogo;
+
+  const char *_alertEvent;   // alerte affichée, nullptr si aucune
+  uint32_t    _alertUntil;   // 0 : tant que l'alarme joue ; sinon échéance
 };

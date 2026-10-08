@@ -46,6 +46,10 @@ void CommandRouter::onCommand(const char *payload, size_t length) {
     Serial.print(signal);
     Serial.print(' ');
     Serial.println(target);
+    // Seul le retour du cmd_id dit au backend que l'ordre a porte. Une cible ou
+    // un signal inconnus n'arrivent pas ici : la commande n'a rien fait, donc
+    // l'abandon annonce est exact.
+    _policy.acknowledge(event, doc["id"] | (const char *)nullptr);
     return;
   }
 

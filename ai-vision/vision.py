@@ -89,6 +89,12 @@ def analyse(frame, engine, db, person_detector=None):
     return persons, detections
 
 
+# Fin d'alerte : la zone s'est dégagée. Ce n'est pas une détection, c'est un
+# changement d'état de la scène, d'où la forme synthétique.
+SCENE_CLEARED = {"cleared": True, "name": None, "status": "cleared",
+                 "kind": "scene", "score": 1.0, "box": (0, 0, 0, 0)}
+
+
 # logique d’alerte
 class AlertPolicy:
     """Décide quand il faut envoyer une alerte selon ce qu’on a détecté"""
@@ -98,6 +104,7 @@ class AlertPolicy:
         self.tracks = {}       # identité -> {"first", "last", "frames"}
         self.last_alert = {}   # identité -> horodatage
         self.last_authorized = 0.0
+        self.alarming = False  # une alerte est en cours : il faudra la lever
 
     @staticmethod
     def key(d):
@@ -136,6 +143,18 @@ class AlertPolicy:
 
         for key in [k for k, t in self.tracks.items() if now - t["last"] > config.LOST_TOLERANCE_S]:
             del self.tracks[key]
+
+        # Rien ne levait jamais l'alerte : la sirène hurlait jusqu'à extinction
+        # manuelle, y compris après l'enrôlement de la personne détectée — elle
+        # devient alors autorisée, donc plus suivie, mais personne ne le disait.
+        #
+        # Les pistes ne contiennent que des identités non autorisées : vide, la
+        # zone est dégagée.
+        if to_alert:
+            self.alarming = True
+        elif self.alarming and not self.tracks:
+            self.alarming = False
+            to_alert.append(SCENE_CLEARED)
         return to_alert
 
 
@@ -248,6 +267,18 @@ class AlertSender(threading.Thread):
 
 def build_payload(d, frame):
     ts = datetime.now(timezone.utc)
+    if d.get("cleared"):
+        # Pas d'instantané : il n'y a rien à montrer d'une zone vide.
+        return {
+            "source": "vision",
+            "type": "intrusion_cleared",
+            "level": "info",
+            "label": "zone_degagee",
+            "status": "cleared",
+            "detector": "scene",
+            "timestamp": ts.isoformat(),
+        }
+
     label = d["name"] or ("presence_non_identifiee" if d["kind"] == "person" else "inconnu")
     config.SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
     snap = config.SNAPSHOTS_DIR / f"{ts:%Y%m%d_%H%M%S}_{label}.jpg"

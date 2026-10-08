@@ -30,6 +30,11 @@ public:
   void raise(Family f, State s, const char *detail = nullptr, float value = NAN,
              const char *cmdId = nullptr);
 
+  // Accuse une commande qui ne joue aucun signal (reglage des sorties).
+  // Sans cet echo, le backend la rejoue puis l'abandonne alors qu'elle a bien
+  // ete executee : il ne peut constater l'execution que par le retour du cmd_id.
+  void acknowledge(const char *event, const char *cmdId);
+
   // Le module n'emet aucun evenement de la famille intrusion : ceux-la
   // viennent de la vision. Presence et secousse relevent du sabotage.
   void onPresence(const PresenceReading &r);

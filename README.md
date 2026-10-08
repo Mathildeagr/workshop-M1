@@ -73,6 +73,26 @@ Le panneau de veille montre le nombre de mesures en base et leur cadence, la
 dernière relevée, le silence depuis la précédente, l'état du modèle et celui de
 chaque nœud. C'est ce qu'il faut ouvrir en allumant le boîtier.
 
+### Sur le réseau de table, sans accès à Internet
+
+Le sous-réseau est étanche. Docker ne peut alors ni vérifier ni télécharger
+d'image, et une construction échoue avant même de commencer. `init.sh` le
+détecte et démarre sur les images déjà construites.
+
+**Il faut donc construire tant qu'il y a du réseau :**
+
+```bash
+docker compose build        # avant de rejoindre le réseau de table
+```
+
+Sans cette étape, une brique dont le code a changé démarrera dans sa version
+précédente, sans que rien ne le signale.
+
+Le serveur de temps, lui, fonctionne hors ligne : sa configuration ajoute
+`local stratum 10`, donc il sert sa propre horloge faute de source amont. Sans
+ça il se déclarerait non synchronisé et **refuserait de répondre** — et le nœud,
+qui exige une horloge juste avant toute poignée de main TLS, resterait muet.
+
 ### Dépannage
 
 **`password authentication failed for user "sentinel"`** après avoir régénéré les

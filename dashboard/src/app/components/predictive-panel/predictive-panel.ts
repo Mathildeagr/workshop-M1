@@ -17,6 +17,9 @@ const SENSITIVITY_LABELS: Record<Sensitivity, string> = { low: 'basse', medium: 
 /** 30 -> "30 j", 0.25 -> "6 h", 0.01 -> "14 min" */
 export function formatDays(days: number | undefined): string {
   if (days === undefined || !Number.isFinite(days)) return '–';
+  // Le plancher d'une minute evite de lire « 0 min » pour trente secondes, mais
+  // zero n'est pas une duree courte : c'est l'absence de couverture.
+  if (days <= 0) return '–';
   if (days >= 1) return `${Math.round(days * 10) / 10} j`;
   if (days * 24 >= 1) return `${Math.round(days * 24)} h`;
   return `${Math.max(1, Math.round(days * 24 * 60))} min`;
@@ -50,7 +53,11 @@ export class PredictivePanel {
   stage = computed(() => STAGE_LABELS[this.lastScore()?.stage ?? ''] ?? this.lastScore()?.stage ?? '–');
 
   requested = computed(() => formatDays(this.config()?.window_days));
-  covered = computed(() => formatDays(this.config()?.effective_days));
+  /** effective_days ne vaut 0 que tant que la brique n'a pas de modele : ce n'est pas une duree. */
+  covered = computed(() => {
+    const days = this.config()?.effective_days;
+    return days === 0 ? 'aucun modèle entraîné' : formatDays(days);
+  });
   /** Historique nettement plus court que la fenêtre demandée : à signaler. */
   shortHistory = computed(() => {
     const c = this.config();

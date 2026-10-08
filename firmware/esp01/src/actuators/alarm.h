@@ -2,7 +2,20 @@
 
 #include <Arduino.h>
 
-struct Step { uint16_t freq_hz; uint16_t dur_ms; };
+// Un pas tient une note pendant une duree, en faisant varier son volume de
+// vol_from a vol_to. Les deux derniers champs ont une valeur par defaut : les
+// motifs a volume constant s'ecrivent toujours {frequence, duree}.
+//
+// Le volume existe parce que la sirene d'intrusion en depend : c'est une note
+// unique dont l'intensite monte et redescend, et c'est la vitesse de ce cycle
+// qui porte l'urgence. Sans lui, trois pas de suite a la meme frequence ne
+// produisent qu'un cri continu.
+struct Step {
+  uint16_t freq_hz;
+  uint16_t dur_ms;
+  uint8_t  vol_from = 100;   // 0 a 100
+  uint8_t  vol_to   = 100;
+};
 
 enum Family : uint8_t {
   FAM_INTRUSION = 0,

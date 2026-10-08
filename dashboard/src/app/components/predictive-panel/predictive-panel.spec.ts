@@ -30,6 +30,17 @@ describe('PredictivePanel', () => {
     expect(formatDays(0.25)).toBe('6 h');
     expect(formatDays(0.01)).toBe('14 min');
     expect(formatDays(undefined)).toBe('–');
+    expect(formatDays(0)).toBe('–');   // pas « 1 min » : zero est une absence, pas une duree courte
+  });
+
+  it("dit qu'aucun modèle n'est entraîné plutôt que d'annoncer une minute d'historique", () => {
+    const { fixture, el, live } = setup();
+    live.onPredictiveConfig({ sensitivity: 'medium', window_days: 7, effective_days: 0 });
+    fixture.detectChanges();
+    const text = el.querySelector('.facts')?.textContent ?? '';
+    expect(text).toContain('demandée : 7 j — historique disponible : aucun modèle entraîné');
+    expect(text).not.toContain('1 min');
+    expect(el.querySelector('.facts .warn')).not.toBeNull();
   });
 
   it('affiche la fenêtre demandée ET la fenêtre couverte, signalée si elle est courte (§10.4)', () => {

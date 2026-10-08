@@ -72,11 +72,24 @@ chmod 644 ./mosquitto/config/passwd 2>/dev/null
 
 # 5. Démarrage de l'infrastructure
 echo "Lancement des conteneurs..."
-docker compose up -d --build
+# Hors ligne, Docker ne peut pas résoudre les images de base et la construction
+# échoue avant même de commencer. Le réseau de table n'ayant pas d'accès sortant,
+# c'est le cas courant : on démarre alors sur les images déjà construites.
+if curl -s --max-time 4 -o /dev/null https://registry-1.docker.io/v2/ 2>/dev/null; then
+    docker compose up -d --build
+else
+    echo "   Pas d'accès au registre : démarrage sur les images déjà construites."
+    echo "   Reconstruire pendant qu'il y a du réseau : docker compose build"
+    docker compose up -d
+fi
 
 # Mosquitto ne relit son fichier de comptes qu'au démarrage, et un conteneur déjà
-# en place garde les anciens.
-docker compose restart mosquitto >/dev/null 2>&1
+# en place garde les anciens. Traefik a le même défaut avec ses certificats : il
+# surveille le répertoire de configuration dynamique, pas les fichiers que
+# celle-ci référence. Un certificat régénéré ne lui parvient donc jamais, et il
+# continue de présenter l'ancien — ce qui fait échouer toute vérification, sans
+# qu'aucun journal ne le dise.
+docker compose restart mosquitto traefik >/dev/null 2>&1
 
 # PostgreSQL n'applique son mot de passe qu'à l'initialisation d'un volume
 # vierge : une base déjà créée garde l'ancien, et plus rien ne s'y connecte. On
@@ -95,6 +108,26 @@ if ! docker compose exec -T -e PGPASSWORD="$PG_PASSWORD" database \
       | docker compose exec -T database psql -U "$PG_USER" -d postgres -q
     docker compose restart backend predict-anomalie >/dev/null 2>&1
 fi
+
+# Attendre que l'API reponde avant de lancer la vision.
+#
+# Le service vision teste la liaison au backend une seule fois, au demarrage, et
+# garde le resultat. Lance deux secondes apres le conteneur, il tombe sur le 404
+# de Traefik — qui n'a pas encore de routeur pour un backend en cours de
+# demarrage — et affiche « backend injoignable » jusqu'au prochain redemarrage,
+# alors que tout fonctionne.
+printf "Attente de l'API"
+for _ in $(seq 1 45); do
+    if curl -s -o /dev/null --max-time 2 --cacert ./certs/sentinel.crt \
+       -w "%{http_code}" https://localhost/api/v1/health 2>/dev/null | grep -q 200; then
+        echo " : prête"
+        break
+    fi
+    printf "."
+    sleep 1
+done
+curl -s -o /dev/null --max-time 2 --cacert ./certs/sentinel.crt https://localhost/api/v1/health 2>/dev/null \
+    || echo " : toujours pas de réponse, la vision signalera le backend injoignable"
 
 # 6. Service vision (ai-vision/server.py) sur l'hôte
 #

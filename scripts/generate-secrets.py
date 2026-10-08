@@ -188,6 +188,7 @@ def main() -> int:
         help="adresse du PC serveur SUR LE SOUS-RÉSEAU DE TABLE (broker MQTT et NTP)",
     )
     parser.add_argument("--esp-ip", help="adresse fixe du nœud (défaut : celle déjà en place)")
+    parser.add_argument("--gateway", help="passerelle (défaut : .1 du sous-réseau du nœud)")
     parser.add_argument("--wifi-ssid", help="défaut : celui déjà en place")
     parser.add_argument("--wifi-password", help="défaut : celui déjà en place")
     parser.add_argument(
@@ -220,12 +221,19 @@ def main() -> int:
 
     if not esp_ip:
         parser.error("aucune adresse d'ESP connue : passer --esp-ip")
-    if not gateway:
-        gateway = dns = str(ipaddress.IPv4Network(f"{esp_ip}/{subnet}", strict=False)[1])
+    # Une passerelle d'un autre sous-réseau ne veut plus rien dire. Quand
+    # l'adressage déménage, on reprend le .1 du nouveau réseau plutôt que de
+    # traîner l'ancienne, qui enverrait le nœud nulle part.
+    network = ipaddress.IPv4Network(f"{esp_ip}/{subnet}", strict=False)
+    if args.gateway:
+        gateway = args.gateway
+    elif not gateway or ipaddress.IPv4Address(gateway) not in network:
+        gateway = str(network[1])
+    if not dns or ipaddress.IPv4Address(dns) not in network:
+        dns = gateway
 
     # Le nœud et le broker doivent être sur le même sous-réseau, sinon
     # l'association Wi-Fi réussit et rien ne passe.
-    network = ipaddress.IPv4Network(f"{esp_ip}/{subnet}", strict=False)
     if host_ip not in network:
         print(f"ATTENTION : {host_ip} est hors de {network}, où se trouve le nœud {esp_ip}.")
         print("            Le nœud s'associera au Wi-Fi mais ne joindra pas le broker.")
@@ -277,12 +285,33 @@ def main() -> int:
                 ca_header.chmod(0o644)
                 firmware = True
 
+        # Les origines autorisees du backend portent l'adresse du serveur. Elles
+        # ne servent qu'aux requetes venues d'une autre origine, un serveur de
+        # developpement du dashboard typiquement, mais les laisser pointer sur
+        # l'ancien reseau ne rendrait service a personne.
+        backend_env = ROOT / "backend" / ".env"
+        if backend_env.exists():
+            origins = ",".join(
+                ["https://sentinel.localhost", "https://localhost", f"https://{host_ip}"]
+            )
+            lines = backend_env.read_text(encoding="utf-8").splitlines()
+            for index, line in enumerate(lines):
+                if line.startswith("CORS_ORIGINS=") and line != f"CORS_ORIGINS={origins}":
+                    lines[index] = f"CORS_ORIGINS={origins}"
+                    other = True
+            backend_env.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
         # Le port et l'adresse d'ecoute du service vision ne sont pas des
         # secrets non plus : on les realigne au passage.
         vision_env = ROOT / "ai-vision" / ".env"
         if vision_env.exists():
             lines = vision_env.read_text(encoding="utf-8").splitlines()
-            fixes = {"SENTINEL_SERVICE_PORT": str(VISION_PORT), "SENTINEL_SERVICE_HOST": "0.0.0.0"}
+            fixes = {
+                "SENTINEL_SERVICE_PORT": str(VISION_PORT),
+                "SENTINEL_SERVICE_HOST": "0.0.0.0",
+                "SENTINEL_API_URL": "https://localhost/api/v1/alerts",
+                "SENTINEL_CA_CERT": "../certs/sentinel.crt",
+            }
             for index, line in enumerate(lines):
                 for key, value in fixes.items():
                     if line.startswith(f"{key}=") and line != f"{key}={value}":
@@ -291,7 +320,7 @@ def main() -> int:
             vision_env.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
         if other:
-            print("Réglages du service vision réalignés.")
+            print("Réglages annexes réalignés (origines du backend, service vision).")
         if firmware:
             print(f"Configuration du nœud réalignée sur {host_ip}.")
             print("Les mots de passe sont inchangés. Le nœud doit être reflashé :")
@@ -419,10 +448,16 @@ VISION_SERVICE_TOKEN={vision_token}
         content = (ROOT / "ai-vision" / ".env.example").read_text(encoding="utf-8")
         for key, value in replacements.items():
             content = re.sub(rf"(?m)^{key}=.*$", f"{key}={value}", content)
+        # Le backend n'est pas joignable sur l'hote : son port 3000 reste interne
+        # au reseau Docker, seul Traefik est publie. Le service vision tourne sur
+        # l'hote et passe donc par lui, en verifiant son certificat.
         content = re.sub(
             r"(?m)^SENTINEL_API_URL=.*$",
-            "SENTINEL_API_URL=http://127.0.0.1:3000/api/v1/alerts",
+            "SENTINEL_API_URL=https://localhost/api/v1/alerts",
             content,
+        )
+        content = re.sub(
+            r"(?m)^SENTINEL_CA_CERT=.*$", "SENTINEL_CA_CERT=../certs/sentinel.crt", content
         )
         write(vision_env, content)
 

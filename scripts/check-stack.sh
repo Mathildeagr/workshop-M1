@@ -108,8 +108,8 @@ if [[ "$MODE" == watch ]]; then
     else
       available=$(jget minutes_available <<<"$model")
       required=$(jget minutes_required <<<"$model")
-      printf '  modèle     \033[33mpas encore\033[0m — %s minutes sur %s nécessaires\n' \
-        "${available:-?}" "${required:-?}"
+      printf '  modèle     \033[33mpas encore\033[0m — %s (%s minutes en base)\n' \
+        "$(jget error <<<"$model")" "${available:-?}"
       printf '             dernière tentative %s, nouvelle dans 2 min\n' \
         "$(jget attempted_at <<<"$model" | cut -dT -f2 | cut -d. -f1)"
     fi
@@ -272,7 +272,21 @@ if [[ "$(jget ready <<<"$model")" == "True" ]]; then
 else
   available=$(jget minutes_available <<<"$model")
   required=$(jget minutes_required <<<"$model")
-  ko "pas encore de modèle : ${available:-?} minutes en base sur ${required:-?} nécessaires"
+  # Deux comptes differents : les lignes en base, et celles qui survivent a la
+  # construction des variables. Les trous de collecte et les capteurs muets font
+  # tomber la seconde bien au-dessous de la premiere, et n'afficher que la
+  # premiere laisse croire que le compte y est.
+  ko "pas encore de modèle : $(jget error <<<"$model"), ${available:-?} minutes en base"
+  # Une seule colonne vide suffit a disqualifier la minute entiere. Un capteur
+  # muet ou sature bloque donc l'apprentissage sans jamais le dire, et attendre
+  # plus longtemps n'y change rien : il faut savoir lequel.
+  blocking=$(sql "select col || ' manquant sur ' || n || ' des ' || t || ' minutes'
+      from (select c.col,
+                   (select count(*) from sensor_minutes where (to_jsonb(sensor_minutes) ->> c.col) is null) as n,
+                   (select count(*) from sensor_minutes) as t
+            from (values ('temperature'),('humidity'),('dew_point'),('gas_ratio')) as c(col)) s
+      where n > 0 order by n desc limit 1;")
+  [[ -n "$blocking" ]] && note "variable bloquante : $blocking"
   note "dernière tentative : $(jget attempted_at <<<"$model"), nouvelle dans 2 min"
   note "pour ne pas attendre deux heures de mesures : ./scripts/check-stack.sh --seed 30"
 fi
