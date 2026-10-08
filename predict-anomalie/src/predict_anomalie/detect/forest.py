@@ -2,7 +2,7 @@
 
 La foret repond bien a une question : ce point est-il rare au vu de ce que j'ai
 appris. Son score brut n'a pas d'unite, on le convertit en p-valeur par les
-quantiles des scores d'apprentissage, et le taux d'alerte devient previsible.
+quantiles des scores d'apprentissage : le seuil s'exprime en rarete relevee.
 
 Mais une p-valeur est un rang, et un rang sature : au-dela de la plage apprise,
 45 degres et 23 degres rendent la meme valeur, parce qu'isoler l'un ou l'autre
