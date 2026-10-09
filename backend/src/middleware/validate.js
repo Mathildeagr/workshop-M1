@@ -1,4 +1,3 @@
-// Valide req.body avec un schéma zod ; le body est remplacé par la version nettoyée
 function validate(schema) {
     return (req, res, next) => {
         const result = schema.safeParse(req.body);

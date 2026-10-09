@@ -1,4 +1,3 @@
-// Configuration centralisée : toutes les variables d'environnement passent par ici
 require("dotenv").config();
 
 function required(name) {
@@ -40,28 +39,22 @@ module.exports = {
     jwtSecret,
     jwtExpiresIn: process.env.JWT_EXPIRES_IN || "8h",
     corsOrigins: list(process.env.CORS_ORIGINS || "http://localhost:4200"),
-    // Nombre de proxys devant l'API (1 = Traefik). 0 en local : sinon X-Forwarded-For serait falsifiable
     trustProxy: Number(process.env.TRUST_PROXY) || 0,
     deviceKeys: parseDeviceKeys(process.env.DEVICE_API_KEYS),
     admin: {
         username: process.env.ADMIN_USERNAME,
         password: process.env.ADMIN_PASSWORD,
     },
-    // Service Python ai-vision/server.py (sur la machine hôte). Optionnel : sans lui, /vision et /faces répondent 503
     vision: {
         url: (process.env.VISION_SERVICE_URL || "http://127.0.0.1:5000").replace(/\/$/, ""),
         token: process.env.VISION_SERVICE_TOKEN || "",
     },
-    // Broker Mosquitto. Sans MQTT_USERNAME, le backend démarre sans MQTT (seule la route HTTP reçoit les alertes)
     mqtt: {
         url: process.env.MQTT_URL || "mqtt://mosquitto:1883",
         username: process.env.MQTT_USERNAME || "",
         password: process.env.MQTT_PASSWORD || "",
     },
-    // Nœud qui joue les alarmes des émetteurs sans boîtier (vision) : buzzer et LED de ce nœud
     alarmNode: process.env.ALARM_NODE || "esp01",
-    // Routes de lecture de predict-anomalie (réseau interne, jamais exposées directement)
     predictUrl: (process.env.PREDICT_URL || "http://predict-anomalie:8000").replace(/\/$/, ""),
-    // Délai d'attente de l'accusé d'une commande avant nouvelle tentative (briefing §5 : 2 s suffisent)
     commandAckTimeoutMs: Number(process.env.COMMAND_ACK_TIMEOUT_MS) || 2000,
 };

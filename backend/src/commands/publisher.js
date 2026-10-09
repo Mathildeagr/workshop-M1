@@ -1,10 +1,5 @@
 const crypto = require("crypto");
 
-// Envoi des commandes aux nœuds et suivi jusqu'à l'accusé d'exécution (briefing §5) :
-// chaque commande porte un id, que le nœud renvoie dans cmd_id sur son topic events (origin "command").
-// Sans accusé dans le délai : nouvelle tentative (rejouer est sans effet de bord), puis abandon explicite.
-// Chaque étape est poussée au dashboard (command_status) pour qu'un superviseur voie que le système insiste.
-
 const ACK_TIMEOUT_MS = 2000;
 const MAX_ATTEMPTS = 3;
 
@@ -20,8 +15,8 @@ function createCommandPublisher({
     now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout,
     ackTimeoutMs = ACK_TIMEOUT_MS, maxAttempts = MAX_ATTEMPTS,
 }) {
-    let mqtt = null;             // client branché après la connexion à la base (attach)
-    const pending = new Map();   // id -> commande en attente d'accusé
+    let mqtt = null;
+    const pending = new Map();
 
     function view(cmd) {
         return {
@@ -53,7 +48,6 @@ function createCommandPublisher({
 
     function attempt(cmd) {
         if (!mqtt?.connected) return fail(cmd, "broker_down", "broker injoignable");
-        // QoS 1 : le broker garde la commande pour un nœud momentanément absent (session persistante, §2)
         mqtt.publish(`sentinel/${cmd.node}/command`, JSON.stringify(cmd.payload), { qos: 1 });
         const attempts = cmd.attempts + 1;
         update(cmd, { attempts, status: attempts === 1 ? "sent" : "retrying" });
@@ -82,7 +76,7 @@ function createCommandPublisher({
             attempts: 0, status: "pending", sentAt: now(), timer: null,
         };
         pending.set(id, cmd);
-        // Nœud marqué hors ligne par son testament : on sait déjà que l'ordre ne passera pas (§5)
+
         if (nodeStatus(node) === "offline") {
             fail(cmd, "node_offline", "nœud hors ligne");
         } else {
@@ -91,7 +85,6 @@ function createCommandPublisher({
         return view(cmd);
     }
 
-    /** Écho origin "command" reçu du nœud : la commande a été exécutée. */
     function acknowledge(node, cmdId) {
         const cmd = cmdId ? pending.get(cmdId) : null;
         if (!cmd || cmd.node !== node) {

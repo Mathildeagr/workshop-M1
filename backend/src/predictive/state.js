@@ -1,6 +1,3 @@
-// État de la brique predict-anomalie vu sur le bus (briefing §9.6 et §9.7) :
-// sa configuration effective (topic retenu "config") et le dernier score de chaque nœud (topic "score").
-
 const IDENTIFIER = /^[a-zA-Z0-9_-]{1,50}$/;
 const STAGES = new Set(["normal", "drift", "anomaly", "critical"]);
 
@@ -35,8 +32,8 @@ function pickScore(body) {
 }
 
 function createPredictiveState({ io, now = Date.now }) {
-    let config = null;            // dernière configuration effective publiée par la brique
-    const scores = new Map();     // source -> dernier score
+    let config = null;
+    const scores = new Map();
 
     function handleConfig(body) {
         config = { ...pickConfig(body), receivedAt: new Date(now()).toISOString() };
@@ -47,7 +44,7 @@ function createPredictiveState({ io, now = Date.now }) {
         const score = pickScore(body);
         if (!score) return;
         scores.set(score.source, score);
-        io.emit("score", score);   // ~1 message / 5 s / source : de quoi tracer la courbe en direct
+        io.emit("score", score);
     }
 
     return {

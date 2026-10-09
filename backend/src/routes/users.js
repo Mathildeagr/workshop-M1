@@ -7,7 +7,6 @@ const { createUserSchema } = require("../schemas");
 
 const router = express.Router();
 
-// Gestion des comptes réservée aux admins
 router.use(requireUser, requireRole("admin"));
 
 router.get("/", async (req, res) => {

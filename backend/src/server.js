@@ -1,4 +1,4 @@
-const config = require("./config");   // en premier : charge et vérifie le .env
+const config = require("./config");
 const express = require("express");
 const http = require("http");
 const bcrypt = require("bcryptjs");
@@ -69,12 +69,10 @@ const ingest = createIngest({
 });
 const predictive = createPredictiveState({ io });
 
-// Route de test (publique, ne révèle rien de sensible)
 app.get("/api/v1/health", (req, res) => {
     res.json({ status: "ok", db: dbReady ? "up" : "down", mqtt: mqttClient?.connected ? "up" : "down", ts: Date.now() });
 });
 
-// Comptes et alertes sont en base : réponse claire plutôt qu'une erreur 500 si elle est tombée
 const requireDb = (req, res, next) =>
     dbReady ? next() : res.status(503).json({ error: "Base de données indisponible" });
 
@@ -82,15 +80,12 @@ app.use("/api/v1/auth", requireDb, authRouter);
 app.use("/api/v1/users", requireDb, usersRouter);
 app.use("/api/v1/alerts", requireDb, alertsRouter({ io, ingest }));
 app.use("/api/v1/commands", requireDb, commandsRouter({ commands, signalSettings }));
-// Mesures écrites par predict-anomalie : courbes en direct (metrics) et historique à la minute (readings)
 app.use("/api/v1/metrics", requireDb, metricsRouter());
 app.use("/api/v1/readings", requireDb, readingsRouter());
 app.use("/api/v1/predictive", predictiveRouter({ state: predictive, getMqtt: () => mqttClient }));
-// État des nœuds vus sur le bus (en ligne / hors ligne, dernière télémétrie)
 app.get("/api/v1/nodes", requireUser, (req, res) => {
     res.json({ mqtt: mqttClient?.connected ?? false, nodes: registry.list() });
 });
-// Service vision (ai-vision/server.py) : pas besoin de la base, 503 si le service est absent
 app.use("/api/v1/vision", visionRouter);
 app.use("/api/v1/faces", facesRouter);
 
@@ -138,8 +133,8 @@ function startMqtt() {
 async function initDatabase() {
     try {
         await sequelize.authenticate();
-        await sequelize.sync();   // crée les tables manquantes (ne modifie jamais une table existante)
-        await upgradeSchema();    // ajoute les colonnes apparues depuis (tables déjà existantes)
+        await sequelize.sync();
+        await upgradeSchema();
         for (const name of ["admin", "superviseur", "lecteur"]) {
             await Role.findOrCreate({ where: { name } });
         }

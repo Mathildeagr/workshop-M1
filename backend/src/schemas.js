@@ -1,7 +1,6 @@
 const { z } = require("zod");
 const { PLAYABLE } = require("./events/rules");
 
-// Identifiants courts et sans caractères spéciaux : pas d'injection possible dans les logs ou le dashboard
 const identifier = z.string().trim().min(1).max(50).regex(/^[a-zA-Z0-9_-]+$/, "Caractères autorisés : lettres, chiffres, _ et -");
 
 const loginSchema = z.object({
@@ -17,31 +16,26 @@ const createUserSchema = z.object({
 
 const primitive = z.union([z.number().finite(), z.boolean(), z.string().max(100), z.null()]);
 
-// rates et contributions (predict-anomalie) : nom de variable -> nombre
 const numericMap = z.record(identifier, z.number().finite())
     .refine((o) => Object.keys(o).length <= 24, "24 champs maximum");
 
-// Contrat commun aux briques (nœud esp01, predict-anomalie, vision) : voir docs du briefing d'intégration.
-// L'émetteur vient toujours de la clé d'appareil ou du topic MQTT, jamais du corps.
 const alertSchema = z.object({
     type: identifier,
     level: z.enum(["info", "warning", "critical"]).default("info"),
-    // Valeur simple (812) ou petit objet plat (IA vision : { label, status, confidence... })
     value: z.union([
         primitive,
         z.record(identifier, primitive).refine((o) => Object.keys(o).length <= 10, "10 champs maximum"),
     ]).optional(),
 
-    // Communs aux briques
-    detail: z.string().max(100).optional(),                 // capteur à l'origine, ou explication courte
+    detail: z.string().max(100).optional(),
     origin: z.enum(["sensor", "command", "model"]).optional(),
-    source: identifier.optional(),                          // nœud concerné, si différent de l'émetteur (voir routes/alerts.js)
-    ts: z.iso.datetime({ offset: true }).optional(),        // horodatage de l'émetteur, s'il a une horloge
+    source: identifier.optional(),
+    ts: z.iso.datetime({ offset: true }).optional(),
 
     // Nœud esp01
     uptime_s: z.number().int().nonnegative().optional(),
     seq: z.number().int().nonnegative().optional(),
-    cmd_id: identifier.optional(),                          // accusé d'exécution d'une commande
+    cmd_id: identifier.optional(),
 
     // Brique predict-anomalie
     detector: z.string().max(50).optional(),
@@ -66,7 +60,7 @@ const faceCaptureSchema = z.object({
     samples: z.number().int().min(1).max(30).default(10),
 }).strict();
 
-// Query string : toujours des chaînes, d'où les conversions
+
 const alertQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(200).default(50),
     acknowledged: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
@@ -76,8 +70,6 @@ const idParamSchema = z.object({
     id: z.coerce.number().int().positive(),
 });
 
-// Commande manuelle du superviseur vers un nœud (briefing §4) :
-// jouer une séquence par son nom, ou couper / rétablir le son et la lumière
 const commandSchema = z.discriminatedUnion("event", [
     z.object({
         node: identifier,
@@ -91,13 +83,12 @@ const commandSchema = z.discriminatedUnion("event", [
     }).strict(),
 ]);
 
-// Réglages de predict-anomalie (briefing §9.5) : au moins un des deux
 const predictiveConfigSchema = z.object({
     sensitivity: z.enum(["low", "medium", "high"]).optional(),
-    window_days: z.number().positive().max(3650).optional(),   // la brique accepte tout, 10 ans suffit
+    window_days: z.number().positive().max(3650).optional(),
 }).strict().refine((o) => o.sensitivity || o.window_days, "sensitivity ou window_days requis");
 
-// Mesures : un nœud, une période (heures) et un nombre de points
+
 const readingsQuerySchema = z.object({
     node: identifier.default("esp01"),
     hours: z.coerce.number().positive().max(24 * 365).default(24),

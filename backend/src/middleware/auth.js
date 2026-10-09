@@ -10,8 +10,6 @@ function decode(token) {
     }
 }
 
-// Vérifie un JWT de session et renvoie son contenu ({ sub, username, role }), ou null.
-// Un ticket (champ "purpose") n'est jamais accepté comme session.
 function verifyToken(token) {
     const payload = decode(token);
     return payload && !payload.purpose ? payload : null;
@@ -25,7 +23,6 @@ function signToken(user, roleName) {
     );
 }
 
-// Ticket court pour les URL qui ne peuvent pas porter de header (ex : <img src> du flux vidéo)
 function signTicket(user, purpose, expiresIn = "60s") {
     return jwt.sign({ sub: user.sub, purpose }, config.jwtSecret, { algorithm: "HS256", expiresIn });
 }
@@ -35,7 +32,6 @@ function verifyTicket(token, purpose) {
     return payload && payload.purpose === purpose ? payload : null;
 }
 
-// Comparaison à temps constant pour ne pas révéler la clé caractère par caractère
 function findDevice(apiKey) {
     if (!apiKey) return null;
     const given = Buffer.from(apiKey);
@@ -59,7 +55,6 @@ function requireUser(req, res, next) {
     next();
 }
 
-// À placer après requireUser
 function requireRole(...roles) {
     return (req, res, next) => {
         if (!roles.includes(req.user.role)) {
@@ -69,7 +64,6 @@ function requireRole(...roles) {
     };
 }
 
-// Appareil (ESP8266, scripts IA) : header "X-API-Key: <cle>"
 function requireDevice(req, res, next) {
     const deviceId = findDevice(req.get("X-API-Key"));
     if (!deviceId) {
