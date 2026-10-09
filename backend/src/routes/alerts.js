@@ -11,8 +11,6 @@ const { formatAlert } = require("../events/alertRecord");
 module.exports = function alertsRouter({ io, ingest }) {
     const router = express.Router();
 
-    // Route obligatoire du sujet : réservée aux appareils (ESP8266, scripts IA).
-    // Même traitement qu'un événement reçu sur le bus MQTT.
     router.post("/", requireDevice, validate(alertSchema), async (req, res) => {
         let result;
         try {
@@ -30,7 +28,6 @@ module.exports = function alertsRouter({ io, ingest }) {
         res.status(201).json({ ...result.alert, command: result.command });
     });
 
-    // ?limit=50&acknowledged=false : les plus récentes d'abord
     router.get("/", requireUser, async (req, res) => {
         const query = alertQuerySchema.safeParse(req.query);
         if (!query.success) {
@@ -45,7 +42,6 @@ module.exports = function alertsRouter({ io, ingest }) {
         res.json(alerts.map(formatAlert));
     });
 
-    // Le superviseur signale qu'il a pris l'alerte en compte
     router.patch("/:id/ack", requireUser, requireRole("admin", "superviseur"), async (req, res) => {
         const params = idParamSchema.safeParse(req.params);
         if (!params.success) {

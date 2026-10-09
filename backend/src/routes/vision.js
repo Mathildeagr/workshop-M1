@@ -7,7 +7,6 @@ const STREAM_PURPOSE = "vision-stream";
 
 const router = express.Router();
 
-// État de la vision (tourne / enrôlement en cours / dernières détections)
 router.get("/status", requireUser, async (req, res, next) => {
     try {
         await forwardJson(await visionFetch("/status"), res);
@@ -16,7 +15,6 @@ router.get("/status", requireUser, async (req, res, next) => {
     }
 });
 
-// La vision tourne en permanence ; stop/start permettent de la couper (maintenance, vie privée)
 for (const action of ["start", "stop"]) {
     router.post(`/${action}`, requireUser, requireRole("admin", "superviseur"), async (req, res, next) => {
         try {
@@ -27,13 +25,11 @@ for (const action of ["start", "stop"]) {
     });
 }
 
-// <img src> ne peut pas envoyer de header Authorization : le dashboard demande d'abord un ticket de 60 s
 router.post("/stream-ticket", requireUser, (req, res) => {
     const ticket = signTicket(req.user, STREAM_PURPOSE);
     res.json({ ticket, url: `/api/v1/vision/stream?ticket=${encodeURIComponent(ticket)}` });
 });
 
-// Flux MJPEG annoté, relayé depuis le service vision (aperçu de la capture pendant un enrôlement)
 router.get("/stream", async (req, res, next) => {
     if (!verifyTicket(String(req.query.ticket || ""), STREAM_PURPOSE)) {
         return res.status(401).json({ error: "Ticket invalide ou expiré" });

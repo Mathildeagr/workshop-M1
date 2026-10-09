@@ -1,6 +1,3 @@
-// État des nœuds connus du bus : en ligne / hors ligne (testament MQTT) et dernière télémétrie.
-
-// Champs de télémétrie relayés au dashboard (briefing §3.2) : on ne relaie rien d'autre
 const TELEMETRY_FIELDS = [
     "uptime_s", "temperature_c", "humidity_pct", "dew_point_c", "climate_age_ms",
     "gas_raw", "gas_warming", "gas_ratio", "gas_age_ms",
@@ -22,7 +19,7 @@ function pickTelemetry(body) {
  * @param {object} deps  { io, raiseAlert } : raiseAlert vient de events/systemAlerts.js
  */
 function createNodeRegistry({ io, raiseAlert, now = Date.now }) {
-    const nodes = new Map();   // id -> { status, statusAt, lastTelemetryAt }
+    const nodes = new Map();
 
     function get(id) {
         if (!nodes.has(id)) nodes.set(id, { status: "unknown", statusAt: null, lastTelemetryAt: null });
@@ -41,9 +38,6 @@ function createNodeRegistry({ io, raiseAlert, now = Date.now }) {
         node.statusAt = now();
         io.emit("node_status", { node: id, status, at: new Date(node.statusAt).toISOString() });
 
-        // Un nœud qui disparaît est un signal de sécurité (module arraché ou hors tension, §2), pas une info technique.
-        // On ne crée l'alerte que sur un vrai changement en direct, pas au rejeu des messages retenus.
-        // "online" n'est une alerte que s'il suit une coupure ("offline"), pas à la première connexion.
         const alarming = status === "offline" ? previous !== "offline" : previous === "offline";
         if (!alarming || retained) return;
         const physical = id.startsWith("esp");

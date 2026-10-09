@@ -1,11 +1,8 @@
-// Client HTTP du service Python ai-vision/server.py (sur la machine hôte ou dans le conteneur ai-vision)
 const { Readable } = require("stream");
 const config = require("./config");
 
-// Erreur renvoyée telle quelle au dashboard par sendError()
 class VisionUnavailable extends Error {}
 
-// Appel au service vision avec le token partagé. timeoutMs = 0 : pas de limite (flux vidéo)
 async function visionFetch(path, { method = "GET", headers = {}, body, timeoutMs = 10_000, signal } = {}) {
     if (!config.vision.token) {
         throw new VisionUnavailable("Service vision non configuré (VISION_SERVICE_TOKEN)");
@@ -16,7 +13,7 @@ async function visionFetch(path, { method = "GET", headers = {}, body, timeoutMs
             method,
             headers: { ...headers, "X-Service-Token": config.vision.token },
             body,
-            duplex: body instanceof Readable ? "half" : undefined,   // body en flux (upload de photos)
+            duplex: body instanceof Readable ? "half" : undefined,
             signal: signals.length ? AbortSignal.any(signals) : undefined,
         });
     } catch (err) {
@@ -26,7 +23,7 @@ async function visionFetch(path, { method = "GET", headers = {}, body, timeoutMs
     }
 }
 
-// Relaie la réponse JSON du service (statut + body) au client
+
 async function forwardJson(upstream, res) {
     const text = await upstream.text();
     if (upstream.status === 204 || !text) return res.status(upstream.status).end();
@@ -37,7 +34,6 @@ async function forwardJson(upstream, res) {
     }
 }
 
-// À utiliser dans les catch des routes : 503 si le service est absent, sinon erreur standard
 function sendError(err, res, next) {
     if (err instanceof VisionUnavailable) return res.status(503).json({ error: err.message });
     next(err);

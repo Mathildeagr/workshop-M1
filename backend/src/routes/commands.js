@@ -11,7 +11,6 @@ const { commandSchema, commandQuerySchema } = require("../schemas");
 module.exports = function commandsRouter({ commands, signalSettings }) {
     const router = express.Router();
 
-    // Historique (traçabilité) : les plus récentes d'abord
     router.get("/", requireUser, async (req, res) => {
         const query = commandQuerySchema.safeParse(req.query);
         if (!query.success) {
@@ -33,12 +32,10 @@ module.exports = function commandsRouter({ commands, signalSettings }) {
             return res.status(404).json({ error: `Nœud inconnu : ${node}` });
         }
 
-        // Coupures mémorisées même si le nœud est injoignable : elles lui seront appliquées à son node_boot
         const isSetting = command.event === "activate" || command.event === "deactivate";
         if (isSetting) signalSettings.record(node, command);
 
         const sent = commands.send(node, command, { trigger: "manual", issuedBy: Number(req.user.sub) });
-        // 202 : l'ordre est parti, son exécution sera confirmée par l'accusé (événement command_status)
         if (sent.status !== "failed") return res.status(202).json(sent);
         if (isSetting) return res.status(202).json({ ...sent, appliedAtNextBoot: true });
         res.status(503).json(sent);

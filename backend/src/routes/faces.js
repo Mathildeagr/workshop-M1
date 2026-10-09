@@ -4,12 +4,11 @@ const validate = require("../middleware/validate");
 const { faceNameSchema, faceStatusSchema, faceCaptureSchema } = require("../schemas");
 const { visionFetch, forwardJson, sendError } = require("../visionClient");
 
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024 + 64 * 1024;   // 5 Mo d'images (limite du service) + en-têtes multipart
-const CAPTURE_TIMEOUT_MS = 60_000;                       // capture webcam : 30 s max côté service + chargement
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024 + 64 * 1024;
+const CAPTURE_TIMEOUT_MS = 60_000;
 
 const router = express.Router();
 
-// Empreintes biométriques : consultation admin/superviseur, modifications admin uniquement
 router.use(requireUser);
 const canRead = requireRole("admin", "superviseur");
 const canWrite = requireRole("admin");
@@ -29,8 +28,6 @@ router.get("/", canRead, async (req, res, next) => {
     }
 });
 
-// Enrôlement depuis des photos (multipart : name, status, image x10 max) : le body est relayé sans être
-// mis en mémoire, le service Python vérifie les champs et qu'il y a exactement un visage par photo
 router.post("/", canWrite, async (req, res, next) => {
     if (!req.is("multipart/form-data")) {
         return res.status(415).json({ error: "multipart/form-data attendu" });
@@ -55,8 +52,6 @@ router.post("/", canWrite, async (req, res, next) => {
     }
 });
 
-// Enrôlement par la webcam (équivalent de "enroll.py add") : la vision est en pause pendant la capture,
-// la réponse arrive une fois la capture terminée (aperçu visible sur /api/v1/vision/stream)
 router.post("/capture", canWrite, validate(faceCaptureSchema), async (req, res, next) => {
     try {
         const upstream = await visionFetch("/faces/capture", {

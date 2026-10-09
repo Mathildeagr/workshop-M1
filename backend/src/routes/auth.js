@@ -8,7 +8,6 @@ const { loginSchema } = require("../schemas");
 
 const router = express.Router();
 
-// Hash factice : un login avec un utilisateur inconnu prend le même temps qu'un mauvais mot de passe
 const DUMMY_HASH = bcrypt.hashSync("sentinel-x-dummy-password", 12);
 
 router.post("/login", loginLimiter, validate(loginSchema), async (req, res) => {

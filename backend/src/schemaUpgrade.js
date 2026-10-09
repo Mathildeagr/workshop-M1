@@ -1,8 +1,5 @@
 const sequelize = require("./db");
 
-// sequelize.sync() crée les tables manquantes mais ne modifie jamais une table existante.
-// Ces instructions ajoutent les colonnes apparues après la création de la base.
-// Idempotentes (IF NOT EXISTS) : sans effet sur une base neuve ou déjà à jour.
 const STATEMENTS = [
     "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS emitter     VARCHAR(50)",
     "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS detail      VARCHAR(100)",

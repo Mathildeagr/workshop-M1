@@ -4,10 +4,6 @@ const { sequelize, SensorReading } = require("../models");
 const { requireUser } = require("../middleware/auth");
 const { readingsQuerySchema, metricsQuerySchema } = require("../schemas");
 
-// Les mesures sont écrites par predict-anomalie (briefing §8) : le backend ne fait que lire.
-//   sensor_readings : brut, toutes les 2 s, 7 jours  -> courbes en direct (GET /metrics)
-//   sensor_minutes  : agrégé à la minute, conservé  -> historique (GET /readings)
-
 function parseQuery(schema, req, res) {
     const query = schema.safeParse(req.query);
     if (!query.success) {
@@ -20,7 +16,6 @@ function parseQuery(schema, req, res) {
 function metricsRouter() {
     const router = express.Router();
 
-    // Format attendu par le dashboard (api.service.ts) : [{ ts, temperature, humidity, gas, motion }], du plus ancien au plus récent
     router.get("/", requireUser, async (req, res) => {
         const query = parseQuery(metricsQuerySchema, req, res);
         if (!query) return;
@@ -33,7 +28,7 @@ function metricsRouter() {
             ts: r.measuredAt.getTime(),
             temperature: r.temperature,
             humidity: r.humidity,
-            gas: r.gas,           // nul pendant la chauffe du MQ-2 : la brique écarte ces mesures (§8.4)
+            gas: r.gas,
             motion: r.motion,
         })));
     });
@@ -44,7 +39,6 @@ function metricsRouter() {
 function readingsRouter() {
     const router = express.Router();
 
-    // Historique à la minute, avec minima et maxima de température (1 440 points par jour)
     router.get("/", requireUser, async (req, res) => {
         const query = parseQuery(readingsQuerySchema, req, res);
         if (!query) return;
@@ -60,7 +54,6 @@ function readingsRouter() {
             );
             res.json(rows.reverse());
         } catch (err) {
-            // Table créée par predict-anomalie à son premier démarrage
             if (err.original?.code === "42P01") {
                 return res.status(503).json({ error: "Historique indisponible : predict-anomalie n'a pas encore créé sensor_minutes" });
             }

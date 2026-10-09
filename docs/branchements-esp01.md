@@ -101,8 +101,11 @@ GND  →  G
 | Réglage | Position | Effet |
 |---|---|---|
 | Cavalier `H` / `L` | **`H`** | sortie haute tant qu'il y a du mouvement |
-| Potentiomètre `Tx` | **minimum** | sinon la sortie reste haute plusieurs minutes |
-| Potentiomètre `Sx` | **milieu** | portée 3 à 7 m |
+| Potentiomètre `Tx` | **minimum** (butée anti-horaire) | sortie haute ~3 s, sinon jusqu'à 5 min |
+| Potentiomètre `Sx` | **minimum** (butée anti-horaire) | portée ~3 m, le plus bas possible |
+| Lentille | **masquée par un tube** (~1–2 cm de diamètre, ~3–5 cm de long) | ramène la détection à ~10 cm devant le capteur |
+
+`Sx` ne descend pas sous ~3 m : la portée de ~10 cm s'obtient en limitant le champ de vision, pas l'électronique. Après chaque retombée de la sortie, le module est aveugle ~2,5 s (matériel, non réglable) : un cycle complet dure donc **~5–6 s au mieux**.
 
 Les variantes sans cavalier ni potentiomètres sont figées en mode répétable : rien à régler.
 

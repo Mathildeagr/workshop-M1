@@ -1,12 +1,5 @@
-// Conversion d'un événement validé (alertSchema) en ligne de la table alerts.
-// Fonction pure : partagée par POST /api/v1/alerts et, plus tard, par l'abonné MQTT.
-
-// Émetteurs autorisés à parler POUR un autre nœud (champ "source") :
-// predict-anomalie et la vision analysent les données d'un nœud sans être ce nœud.
-// Un nœud physique (esp01) ne parle que pour lui-même.
 const DELEGATING_EMITTERS = new Set(["predictive", "vision"]);
 
-// Champs qui ont leur propre colonne ; tout le reste part dans meta
 const COLUMNS = new Set(["type", "level", "value", "detail", "origin", "source", "ts"]);
 
 class AlertRecordError extends Error {
@@ -49,8 +42,8 @@ function toAlertRecord(body, emitter) {
 function formatAlert(alert) {
     return {
         id: alert.id,
-        source: alert.deviceId,          // nœud concerné : c'est lui que le superviseur doit voir
-        emitter: alert.emitter,          // qui a émis (esp01, predictive, vision)
+        source: alert.deviceId,
+        emitter: alert.emitter,
         type: alert.type,
         level: alert.level,
         value: alert.value,
